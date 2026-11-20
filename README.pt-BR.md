@@ -31,7 +31,7 @@ Precisa de Python 3.9 ou mais novo como `python3`. Opcional, só no Claude Code:
 - O ponto de troca automático segue a janela do modelo: 180k tokens numa janela de 1M do Claude, 166k em 200K, 102k num limite de 120k do Codex (primeira resposta em 30k tokens). Regra: [docs/how-it-works.md](docs/how-it-works.md).
 - O gancho custa cerca de 196 ms por chamada no Windows com o atalho `python3` da Microsoft Store, e cerca de 26 ms de interpretador com o Python do python.org.
 - 0 chamadas de rede. Tudo fica no seu perfil de usuário. O texto da passagem é limitado a 9.000 caracteres.
-- 85 testes do núcleo e 173 do band.
+- 85 testes do núcleo e 182 do band.
 
 ## Início rápido
 
@@ -47,7 +47,7 @@ Com o band, `/relay` faz os passos 2 e 3 por você, e `/relay auto` faz sozinho 
 |---|---|
 | `/relay` | Grava a passagem e abre a sessão nova agora (band). |
 | `/relay auto` | Liga ou desliga a troca automática. Lembra entre sessões. |
-| `/relay button` | Mostra ou esconde o botão fixo `Sync_Relay auto: ligado/desligado`. Lembra entre sessões. A linha de estado fica. |
+| `/relay button` | Mostra ou esconde o botão fixo `Sync_Relay auto: ligado/desligado` (en: `on/off`). Lembra entre sessões. A linha de estado fica. |
 | `/relay status` | Modo da trava, auto, contexto atual, ponto de troca e a origem dele, pasta das passagens. |
 | `relay` | A mensagem inteira. Igual a `/relay`, e é o jeito no Codex (depois `/new`) ou no Claude Code sem o band. |
 
@@ -70,6 +70,7 @@ Um arquivo JSON para as duas CLIs: `%APPDATA%\synclabs-relay\config.json` no Win
 | `mode` | `enforce` | `enforce` bloqueia ferramentas de trabalho na sessão principal, `remind` só lembra, `off` não faz nenhum dos dois. |
 | `threshold_tokens` | `150000` | Teto do crescimento que dispara a troca. |
 | `button` | `true` | Mostrar o botão fixo (band). |
+| `auto` | `false` | Começar com a troca automática ligada (band). |
 | `lang` | `auto` | `auto`, `en` ou `pt-BR`. |
 | `handoff_dir` | por usuário | Onde ficam os arquivos de passagem. |
 | `routing` | veja os docs | Agente, modelo e esforço por camada e por CLI. |

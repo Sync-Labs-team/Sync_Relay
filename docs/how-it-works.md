@@ -45,7 +45,7 @@ floor + min(D, 0.8 x (C - floor))
 ```
 
 - `D` is `threshold_tokens` from the config, 150,000 when absent.
-- `floor` is the token count of the session's first response (system prompt, tools, memory).
+- `floor` is the token count of the session's first response. It is measured, not read from a file: it is everything the CLI loaded at the start (system prompt, tool definitions, MCP servers, skills, memory, and files such as CLAUDE.md and AGENTS.md).
 - `C` is the CLI's auto-compaction point. Claude Code: `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, else `autoCompactWindow` in settings, else the model's window (1M: 967k; 200K: 200k; `CLAUDE_CODE_DISABLE_1M_CONTEXT` forces 200K); `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can lower it. Codex: `model_auto_compact_token_limit` in `config.toml`; absent means no ceiling and `D` applies alone.
 
 With a floor of 30k: Claude on a 1M window switches at 180k; Claude on 200K at 166k; Codex with a limit of 120k at 102k. `/relay status` shows the current number and where `C` came from. The core warns at the `Stop` hook; the band shows the same point in its status line and, with auto on, switches by itself.

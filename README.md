@@ -31,7 +31,7 @@ Needs Python 3.9 or newer as `python3`. Optional, Claude Code only: `claude plug
 - The automatic switch point follows the model's window: 180k tokens on a 1M Claude window, 166k on 200K, 102k on a Codex limit of 120k (first response at 30k tokens). Rule: [docs/how-it-works.md](docs/how-it-works.md).
 - Hooks cost about 196 ms per call on Windows with the Microsoft Store `python3` shortcut, and about 26 ms of interpreter time with python.org Python.
 - 0 network calls. Everything stays under your user profile. Handoff text is capped at 9,000 characters.
-- 85 core tests and 173 band tests.
+- 85 core tests and 182 band tests.
 
 ## Quickstart
 
@@ -47,7 +47,7 @@ With the band, `/relay` does steps 2 and 3 for you, and `/relay auto` does them 
 |---|---|
 | `/relay` | Writes the handoff and opens the new session now (band). |
 | `/relay auto` | Turns the automatic switch on or off. Remembered between sessions. |
-| `/relay button` | Shows or hides the fixed button `Sync_Relay auto: on/off`. Remembered between sessions. The status line stays. |
+| `/relay button` | Shows or hides the fixed button `Sync_Relay auto: on/off` (pt-BR: `ligado/desligado`). Remembered between sessions. The status line stays. |
 | `/relay status` | Lock mode, auto, current context, switch point and where it comes from, handoff folder. |
 | `relay` | The whole message. Same as `/relay`, and the way to do it on Codex (then `/new`) or on Claude Code without the band. |
 
@@ -70,6 +70,7 @@ One JSON file for both CLIs: `%APPDATA%\synclabs-relay\config.json` on Windows, 
 | `mode` | `enforce` | `enforce` blocks work tools in the main session, `remind` only reminds, `off` does neither. |
 | `threshold_tokens` | `150000` | Upper bound for the growth that triggers the switch. |
 | `button` | `true` | Show the fixed button (band). |
+| `auto` | `false` | Start with the automatic switch on (band). |
 | `lang` | `auto` | `auto`, `en` or `pt-BR`. |
 | `handoff_dir` | per user | Where the handoff files go. |
 | `routing` | see docs | Agent, model and effort per layer and CLI. |

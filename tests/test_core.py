@@ -51,7 +51,7 @@ def tearDownModule():
 
 def rodar(cli, entrada, env=None, cfg=None, cru=None):
     e = {k: v for k, v in os.environ.items()
-         if not k.startswith(("SYNCLABS_RELAY_", "CLAUDE_CODE_", "CLAUDE_PID", "LC_", "LANG"))}
+         if not k.startswith(("SYNCLABS_RELAY_", "CLAUDE_CODE_", "CLAUDE_PID", "CLAUDE_CONFIG_DIR", "CLAUDE_AUTOCOMPACT_", "CODEX_HOME", "LC_", "LANG"))}
     e.update(SBENV)
     e["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN)
     cf = SB / "config.json"
@@ -281,7 +281,7 @@ class Trava(Limpo):  # scenarios 1-3
         self.assertEqual(ctx(rodar("claude", UPS, CLI, {"mode": "remind"})), EN["reminder"])
         self.assertIsNone(rodar("claude", PRE, CLI, {"mode": "off"}))
         self.assertIsNone(rodar("claude", UPS, CLI, {"mode": "off"}))
-        pedido = ctx(rodar("claude", {**UPS, "prompt": "handoff"}, CLI, {"mode": "off"}))
+        pedido = ctx(rodar("claude", {**UPS, "prompt": "relay"}, CLI, {"mode": "off"}))
         self.assertIn(str(HD), pedido)
         self.assertNotIn(EN["reminder"], pedido)
 
@@ -346,11 +346,14 @@ class Lembrete(Limpo):
         self.assertLess(len(PT["reminder"]), 400)
 
     def test_pedido_de_passagem(self):
-        for palavra in ("handoff", " /Handoff ", "passagem", "/passagem"):
+        for palavra in ("relay", " /Relay ", "/RELAY"):
             c = ctx(rodar("claude", {**UPS, "prompt": palavra, "cwd": "C:\\Proj\\A"}, CLI))
             self.assertIn(str(HD / (SA + "-s-1.md")), c, palavra)  # Claude: <slug>-<id[:8]>.md
             self.assertIn(EN["reminder"], c)
-        c = ctx(rodar("codex", {**UPS, "prompt": "handoff", "transcript_path": rollout(str(SB), "codex-tui")}, CLI))
+        for palavra in ("handoff", "/handoff", "passagem", "/passagem", "relay now", "relays", "/relay auto"):
+            c = ctx(rodar("claude", {**UPS, "prompt": palavra, "cwd": "C:\\Proj\\A"}, CLI))
+            self.assertEqual(c, EN["reminder"], palavra)  # only the reminder: no handoff request
+        c = ctx(rodar("codex", {**UPS, "prompt": "relay", "transcript_path": rollout(str(SB), "codex-tui")}, CLI))
         self.assertIn("fork_context", c)
         self.assertIn("8000", c)
         if os.name != "nt":
@@ -359,12 +362,12 @@ class Lembrete(Limpo):
 
     def test_pedido_leva_meta_agendamentos_e_segundo_plano(self):  # v0.1.1, measured: /clear drops the goal, keeps the rest
         for lang, msgs in (("en", EN), ("pt-BR", PT)):
-            c = ctx(rodar("claude", {**UPS, "prompt": "handoff"}, CLI, {"lang": lang}))
+            c = ctx(rodar("claude", {**UPS, "prompt": "relay"}, CLI, {"lang": lang}))
             for termo in ("/goal", "CronList", "/clear"):
                 self.assertIn(termo, c, (lang, termo))
             self.assertLess(len(msgs["handoff_request"]), 1800, lang)
-        self.assertIn("subagent", ctx(rodar("claude", {**UPS, "prompt": "handoff"}, CLI, {"lang": "en"})))
-        self.assertIn("subagente", ctx(rodar("claude", {**UPS, "prompt": "passagem"}, CLI, {"lang": "pt-BR"})))
+        self.assertIn("subagent", ctx(rodar("claude", {**UPS, "prompt": "relay"}, CLI, {"lang": "en"})))
+        self.assertIn("subagente", ctx(rodar("claude", {**UPS, "prompt": "relay"}, CLI, {"lang": "pt-BR"})))
 
 
 class SessionStartTabela(Limpo):  # scenario 6
@@ -429,7 +432,7 @@ class Passagem(Limpo):
     def test_claude_para_codex_e_inverso(self):  # scenario 8
         with tempfile.TemporaryDirectory() as t:
             cwd = "C:\\Proj\\A"
-            pedido = ctx(rodar("claude", {**UPS, "prompt": "handoff", "cwd": cwd, "session_id": "00000000-0000-4000-8000-000000000001"}, CLI))
+            pedido = ctx(rodar("claude", {**UPS, "prompt": "relay", "cwd": cwd, "session_id": "00000000-0000-4000-8000-000000000001"}, CLI))
             alvo = re.search(r"(\S+%s-00000000\.md)" % SA, pedido).group(1)
             Path(alvo).write_text("from claude \u2192 codex", "utf-8")
             # a new Claude window never takes another Claude session's file; only the /clear of the asking process does
@@ -437,7 +440,7 @@ class Passagem(Limpo):
             c = ctx(self.cod(t))
             self.assertIn("from claude", c)
             self.assertFalse(Path(alvo).exists())
-            pedido = ctx(rodar("codex", {**UPS, "prompt": "handoff", "cwd": cwd,
+            pedido = ctx(rodar("codex", {**UPS, "prompt": "relay", "cwd": cwd,
                                          "transcript_path": rollout(t, "codex-tui")}))
             alvo = re.search(r"(\S+%s\.md)" % SA, pedido).group(1)
             Path(alvo).write_text("from codex", "utf-8")
@@ -450,8 +453,8 @@ class Passagem(Limpo):
         self.assertEqual(relay.nome_handoff("C:\\x", None, "claude"), SX + ".md")
 
     def test_duas_sessoes_claude_na_mesma_pasta(self):
-        a = ctx(rodar("claude", {**UPS, "prompt": "handoff", "session_id": "aaaaaaaa-1"}, CLI))
-        b = ctx(rodar("claude", {**UPS, "prompt": "handoff", "session_id": "bbbbbbbb-2"}, CLI))
+        a = ctx(rodar("claude", {**UPS, "prompt": "relay", "session_id": "aaaaaaaa-1"}, CLI))
+        b = ctx(rodar("claude", {**UPS, "prompt": "relay", "session_id": "bbbbbbbb-2"}, CLI))
         self.assertIn("-aaaaaaaa.md", a)
         self.assertIn("-bbbbbbbb.md", b)
         self.assertNotIn("-aaaaaaaa", b)
@@ -540,7 +543,7 @@ class Passagem(Limpo):
         self.assertEqual([p.name for p in meus if p.exists()], [])
 
     def test_tipo_indeterminado_ainda_faz_a_passagem(self):  # B3: only the lock stays out
-        r = rodar("claude", {**UPS, "prompt": "handoff"}, {"LANG": "en_US.UTF-8"})  # no CLAUDE_CODE_ENTRYPOINT
+        r = rodar("claude", {**UPS, "prompt": "relay"}, {"LANG": "en_US.UTF-8"})  # no CLAUDE_CODE_ENTRYPOINT
         self.assertIn(str(HD), ctx(r))
         self.assertEqual(r["systemMessage"], EN["detect_failed"])
         self.assertIsNone(rodar("claude", PRE, {"LANG": "en_US.UTF-8"}))  # no lock
@@ -549,7 +552,7 @@ class Passagem(Limpo):
         self.assertIn("passed on", ctx(e))
         with tempfile.TemporaryDirectory() as t:
             sem = rollout(t, None)
-            r = rodar("codex", {**UPS, "prompt": "passagem", "transcript_path": sem}, {"LANG": "en_US"})
+            r = rodar("codex", {**UPS, "prompt": "relay", "transcript_path": sem}, {"LANG": "en_US"})
             self.assertIn(str(HD), ctx(r))
 
     def test_juncao_do_windows(self):  # C1
@@ -572,7 +575,7 @@ class Passagem(Limpo):
         arq.write_text("x", "utf-8")
         for ruim in ("relativa/pasta", str(SB / "a" / ".." / "b"), str(arq), str(SB / "a") + os.sep + ".. ",
                      str(SB / "a" / "...") + os.sep + "b"):
-            r = rodar("claude", {**UPS, "prompt": "handoff"}, CLI, {"handoff_dir": ruim})
+            r = rodar("claude", {**UPS, "prompt": "relay"}, CLI, {"handoff_dir": ruim})
             self.assertIn(padrao, ctx(r), ruim)
             self.assertNotIn("systemMessage", r)
         shutil.rmtree(padrao, ignore_errors=True)
@@ -583,7 +586,7 @@ class Passagem(Limpo):
         cfg = {"handoff_dir": str(arq / "sub")}
         with tempfile.TemporaryDirectory() as t:
             tr = rollout(t, "codex-tui")
-            pedido = ctx(rodar("codex", {**UPS, "prompt": "handoff", "cwd": SS["cwd"], "transcript_path": tr}, None, cfg))
+            pedido = ctx(rodar("codex", {**UPS, "prompt": "relay", "cwd": SS["cwd"], "transcript_path": tr}, None, cfg))
             alvo = re.search(r"(\S+%s\.md)" % SA, pedido).group(1)
             Path(alvo).write_text("delivered body", "utf-8")
             r = rodar("codex", {**SS, "transcript_path": tr}, None, cfg)
@@ -594,7 +597,7 @@ class Passagem(Limpo):
         arq = SB / "umarquivo2"
         arq.write_text("x", "utf-8")
         env = {**CLI, "LOCALAPPDATA": str(arq), "XDG_STATE_HOME": str(arq), "HOME": str(arq), "USERPROFILE": str(arq)}
-        r = rodar("claude", {**UPS, "prompt": "handoff"}, env, {"handoff_dir": ""})
+        r = rodar("claude", {**UPS, "prompt": "relay"}, env, {"handoff_dir": ""})
         self.assertEqual(r["systemMessage"], EN["handoff_dir_unusable"])
         self.assertNotIn("[handoff]", ctx(r))  # no file to write: no request
 
@@ -628,7 +631,7 @@ class Passagem(Limpo):
             self.skipTest("cannot create symlinks here (Windows without privilege)")
         try:
             self.assertNotIn("planted", ctx(rodar("claude", SS, CLI)))  # does not deliver
-            r = rodar("claude", {**UPS, "prompt": "handoff", "cwd": "C:\\Proj\\A"}, CLI)
+            r = rodar("claude", {**UPS, "prompt": "relay", "cwd": "C:\\Proj\\A"}, CLI)
             self.assertNotIn(str(HD), ctx(r))  # does not ask for a write through the link
             w = {**PRE, "tool_name": "Write", "tool_input": {"file_path": str(HD / "x.md")}}
             self.assertTrue(negou(rodar("claude", w, CLI)))
@@ -642,7 +645,7 @@ class Juncao(Limpo):
     A, B = "aaaaaaaa-1111", "bbbbbbbb-2222"
 
     def pede(self, sid, pid, texto, cwd="C:\\Proj\\A"):
-        c = ctx(rodar("claude", {**UPS, "prompt": "handoff", "cwd": cwd, "session_id": sid}, {**CLI, "CLAUDE_PID": pid}))
+        c = ctx(rodar("claude", {**UPS, "prompt": "relay", "cwd": cwd, "session_id": sid}, {**CLI, "CLAUDE_PID": pid}))
         alvo = Path(re.search(r"(\S+-%s\.md)" % sid[:8], c).group(1))
         alvo.write_text(texto, "utf-8")
         return alvo
@@ -844,7 +847,7 @@ class PermissaoDaPassagem(Limpo):  # P1: allow only for the Write of this sessio
     def setUp(self):
         super().setUp()
         self.env = {**CLI, "CLAUDE_PID": "111"}
-        c = ctx(rodar("claude", {**UPS, "prompt": "handoff", "cwd": self.CWD, "session_id": "aaaaaaaa-1111"}, self.env))
+        c = ctx(rodar("claude", {**UPS, "prompt": "relay", "cwd": self.CWD, "session_id": "aaaaaaaa-1111"}, self.env))
         self.alvo = re.search(r"(\S+-aaaaaaaa\.md)", c).group(1)
 
     def pre(self, caminho=None, env=None, cfg=None, conteudo="x", **extra):
@@ -919,8 +922,10 @@ class Stop(Limpo):
             unico = transcript_claude(t, "unico", [160000])
             msg = rodar("claude", {**STOP, "transcript_path": alto}, CLI)["systemMessage"]
             self.assertIn("160k", msg)
-            self.assertIn("150k", msg)
-            self.assertIn("handoff", msg)
+            self.assertIn("+150k", msg)
+            self.assertIn("switch point (160k)", msg)  # floor 10k + min(150k, 0.8 x (200k - 10k)): unknown model = 200K window
+            self.assertIn("/relay", msg)
+            self.assertNotIn("Type: handoff", msg)
             self.assertIsNone(rodar("claude", {**STOP, "transcript_path": baixo}, CLI))
             self.assertIsNone(rodar("claude", {**STOP, "transcript_path": unico}, CLI))  # no floor: no warning
             self.assertIsNone(rodar("claude", {**STOP, "transcript_path": alto}, CLI, {"stop_warning": False}))
@@ -951,12 +956,88 @@ class Stop(Limpo):
             msg = rodar("codex", {**STOP, "transcript_path": alto})["systemMessage"]
             self.assertIn("245k", msg)
             self.assertIn("155k", msg)
+            self.assertIn("/relay", msg)
             self.assertIsNone(rodar("codex", {**STOP, "transcript_path": quase}))
             self.assertIsNone(rodar("codex", {**STOP, "transcript_path": rollout(t, "codex-tui", 245000)}))  # no floor
             self.assertIsNone(rodar("codex", {**STOP, "transcript_path": rollout(t, "codex_exec", 245000, primeiro=90000)}))
             sub = rollout(t, "codex-tui", 245000, {"subagent": {}}, primeiro=90000)
             self.assertIsNone(rodar("codex", {**STOP, "transcript_path": sub}))
             self.assertIsNotNone(rodar("codex", {**STOP, "transcript_path": quase}, cfg={"threshold_tokens": 100000}))
+
+
+def modelo_claude(pasta, nome, totais, modelo):
+    """Like transcript_claude, with a model id on every assistant response (the last one is read)."""
+    p = transcript_claude(pasta, nome, totais)
+    linhas = [json.loads(x) for x in Path(p).read_text("utf-8").splitlines()]
+    for x in linhas:
+        if x.get("type") == "assistant":
+            x["message"]["model"] = modelo
+    Path(p).write_text("\n".join(json.dumps(x) for x in linhas) + "\n", "utf-8")
+    return p
+
+
+class PontoDeTroca(Limpo):  # v0.1.1: switch = floor + min(D, 0.8 x (C - floor)), shared vectors with the band
+    CASOS = VET["compaction_cases"]["cases"]
+
+    def test_vetores_compactacao_e_troca(self):
+        for k in self.CASOS:
+            c, origem = relay.compactacao(k["cli"], k["model"], k["env"], k["settings"], k["codex_limit"])
+            self.assertEqual((c, origem), (k["c"], k["origem"]), k["name"])
+            self.assertEqual(relay.ponto_de_troca(k["floor"], k["threshold"] or 150000, c), k["switch"], k["name"])
+
+    def test_exemplos_do_dono(self):  # floor 30k
+        por = {k["name"]: k["switch"] for k in self.CASOS}
+        self.assertEqual(por["claude_1m_opus_4_7"], 180000)
+        self.assertEqual(por["claude_200k_sonnet_4_6"], 166000)
+        self.assertEqual(por["codex_limit_120k"], 102000)
+        self.assertEqual(por["codex_no_limit"], 180000)
+        self.assertEqual(por["threshold_300k_claude_200k"], 166000)
+
+    def stop(self, cli, caminho, env=None, cfg=None):
+        return rodar(cli, {**STOP, "transcript_path": caminho}, {**CLI, **(env or {})}, cfg)
+
+    def test_stop_claude_pelo_modelo_do_transcript(self):  # floor 30k: 1M model switches at 180k, 200K model at 166k
+        with tempfile.TemporaryDirectory() as t:
+            for modelo, total, avisa in (("claude-opus-4-7", 170000, False), ("claude-opus-4-7", 180000, True),
+                                         ("claude-sonnet-4-6", 165000, False), ("claude-sonnet-4-6", 166000, True),
+                                         ("claude-sonnet-4-6[1m]", 166000, False)):
+                tr = modelo_claude(t, "m-%s-%d" % (modelo[-6:], total), [30000, total], modelo)
+                r = self.stop("claude", tr)
+                self.assertEqual(r is not None, avisa, (modelo, total))
+            tr = modelo_claude(t, "m1", [30000, 180000], "claude-opus-4-7")
+            self.assertIn("switch point (180k)", self.stop("claude", tr)["systemMessage"])
+            # threshold_tokens 300000 with a 200K model: the ceiling still applies
+            tr = modelo_claude(t, "m2", [30000, 166000], "claude-sonnet-4-6")
+            self.assertIsNotNone(self.stop("claude", tr, cfg={"threshold_tokens": 300000}))
+            tr = modelo_claude(t, "m3", [30000, 165000], "claude-sonnet-4-6")
+            self.assertIsNone(self.stop("claude", tr, cfg={"threshold_tokens": 300000}))
+
+    def test_stop_claude_com_env_e_settings(self):
+        with tempfile.TemporaryDirectory() as t:
+            tr = modelo_claude(t, "e1", [30000, 126000], "claude-opus-4-7")
+            self.assertIsNone(self.stop("claude", tr))  # 1M model: switch at 180k
+            cc = Path(t) / "cc"
+            cc.mkdir()
+            (cc / "settings.json").write_text(json.dumps({"autoCompactWindow": 150000}), "utf-8")
+            self.assertIsNotNone(self.stop("claude", tr, {"CLAUDE_CONFIG_DIR": str(cc)}))  # settings: 126k
+            (cc / "settings.json").write_text("{broken", "utf-8")
+            self.assertIsNone(self.stop("claude", tr, {"CLAUDE_CONFIG_DIR": str(cc)}))  # unreadable: ignored
+            self.assertIsNotNone(self.stop("claude", tr, {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000"}))
+            self.assertIsNone(self.stop("claude", tr, {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "100"}))  # 967k: still 180k
+
+    def test_stop_codex_com_config_toml(self):  # floor 30k: limit 120k -> 102k; none -> 180k
+        with tempfile.TemporaryDirectory() as t:
+            ch = Path(t) / "ch"
+            ch.mkdir()
+            env = {"CODEX_HOME": str(ch)}
+            alto = rollout(t, "codex-tui", 110000, primeiro=30000)
+            self.assertIsNone(self.stop("codex", alto, env))  # no file: no ceiling, 180k
+            (ch / "config.toml").write_text('model = "x"\nmodel_auto_compact_token_limit = 120000  # comment\n[profiles.p]\n', "utf-8")
+            self.assertIn("switch point (102k)", self.stop("codex", alto, env)["systemMessage"])
+            (ch / "config.toml").write_text('[profiles.p]\nmodel_auto_compact_token_limit = 120000\n', "utf-8")
+            self.assertIsNone(self.stop("codex", alto, env))  # a key inside a table is not the global one
+            (ch / "config.toml").write_text('model_auto_compact_token_limit = "x"\n', "utf-8")
+            self.assertIsNone(self.stop("codex", alto, env))
 
 
 class SubagentStop(Limpo):  # scenario 10
@@ -1021,7 +1102,7 @@ class Robustez(Limpo):
         r = rodar("claude", {**SS, "source": "clear"}, {**CLI, "PYTHONIOENCODING": "cp1252"})
         self.assertIn("next: X", ctx(r))  # decoded back from \u escapes
         self.assertIn("a\u00e7\u00e3o \u2713", ctx(r))
-        rodar("claude", {**UPS, "prompt": "handoff"}, {**CLI, "LANG": "pt_BR.UTF-8"})  # pt-BR text with accents
+        rodar("claude", {**UPS, "prompt": "relay"}, {**CLI, "LANG": "pt_BR.UTF-8"})  # pt-BR text with accents
 
     def test_entrada_com_bom(self):  # Windows PowerShell 5.1 pipes stdin with a BOM when $OutputEncoding is UTF-8
         bom = b"\xef\xbb\xbf" + json.dumps(PRE).encode() + b"\r\n"

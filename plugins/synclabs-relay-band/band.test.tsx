@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { CONTAGEM_S, configFile, defaultHandoffDir, deveAvisar, LIMIAR_ACIMA, nomeArquivo, parseConfig, resolveLang, slug, TETO_ESCRITA_MS } from './hooks/register'
+import { compactacao, CONTAGEM_S, configFile, defaultHandoffDir, deveAvisar, janela1m, LIMIAR_ACIMA, nomeArquivo, parseConfig, pontoDeTroca, resolveLang, slug, TETO_ESCRITA_MS } from './hooks/register'
 
 // Existing assertions use the pt-BR wording: pin the language (the test host locale is not stable).
 const pt = (on: any) => on('env.get', (_: any, e: any) => ({ value: e.name === 'SYNCLABS_RELAY_LANG' ? 'pt-BR' : undefined }))
@@ -307,7 +307,468 @@ const vectors = {
       "english",
       "locale"
     ]
-  ]
+  ],
+  "compaction_cases": {
+    "_comment": "Switch point = floor + min(D, 0.8 x (C - floor)); D = threshold (default 150000); if C - floor <= 0, floor + D. C (Claude): env CLAUDE_CODE_AUTO_COMPACT_WINDOW (>=100000), else settings autoCompactWindow (number >=100000), else the model window (1M ids: [1m] suffix, Fable, Sonnet >=5, Haiku >=5.5, Opus >=4.7 -> 967000; else 200000; CLAUDE_CODE_DISABLE_1M_CONTEXT=1 forces 200000), then x CLAUDE_AUTOCOMPACT_PCT_OVERRIDE/100 (1 to 100). C (Codex): model_auto_compact_token_limit from config.toml, else none. origem: env, settings, model, codex-config, none; '+pct' when the override applied. The band (Claude only) skips the codex cases.",
+    "cases": [
+      {
+        "name": "claude_1m_opus_4_7",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "claude_200k_sonnet_4_6",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "codex_limit_120k",
+        "cli": "codex",
+        "model": null,
+        "env": {},
+        "settings": null,
+        "codex_limit": 120000,
+        "threshold": null,
+        "floor": 30000,
+        "c": 120000,
+        "origem": "codex-config",
+        "switch": 102000
+      },
+      {
+        "name": "codex_no_limit",
+        "cli": "codex",
+        "model": null,
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": null,
+        "origem": "none",
+        "switch": 180000
+      },
+      {
+        "name": "threshold_300k_claude_200k",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": 300000,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "threshold_100k_claude_1m",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": 100000,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 130000
+      },
+      {
+        "name": "env_window_500k",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {
+          "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "500000"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 500000,
+        "origem": "env",
+        "switch": 180000
+      },
+      {
+        "name": "env_window_below_100k_ignored",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {
+          "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "99999"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "env_window_junk_ignored",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {
+          "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "abc"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "env_beats_settings",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {
+          "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"
+        },
+        "settings": {
+          "autoCompactWindow": 150000
+        },
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 300000,
+        "origem": "env",
+        "switch": 180000
+      },
+      {
+        "name": "settings_window_150k",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": {
+          "autoCompactWindow": 150000
+        },
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 150000,
+        "origem": "settings",
+        "switch": 126000
+      },
+      {
+        "name": "settings_window_not_a_number_ignored",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": {
+          "autoCompactWindow": "150000"
+        },
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "settings_window_true_ignored",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": {
+          "autoCompactWindow": true
+        },
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "pct_override_10",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {
+          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "10"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 96700,
+        "origem": "model+pct",
+        "switch": 83360
+      },
+      {
+        "name": "pct_override_0_ignored",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {
+          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "0"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "pct_override_101_ignored",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {
+          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "101"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "pct_override_on_env_window",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {
+          "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000",
+          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 150000,
+        "origem": "env+pct",
+        "switch": 126000
+      },
+      {
+        "name": "disable_1m_forces_200k",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {
+          "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "suffix_1m",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6[1m]",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "fable_1m",
+        "cli": "claude",
+        "model": "claude-fable-1",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "sonnet_5_1m",
+        "cli": "claude",
+        "model": "claude-sonnet-5",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "sonnet_5_5_1m",
+        "cli": "claude",
+        "model": "claude-sonnet-5-5",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "haiku_5_5_1m",
+        "cli": "claude",
+        "model": "claude-haiku-5-5",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "haiku_5_4_200k",
+        "cli": "claude",
+        "model": "claude-haiku-5-4",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "haiku_4_5_200k",
+        "cli": "claude",
+        "model": "claude-haiku-4-5-20251001",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "opus_4_6_200k",
+        "cli": "claude",
+        "model": "claude-opus-4-6",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "opus_4_8_dated_1m",
+        "cli": "claude",
+        "model": "claude-opus-4-8-20270101",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "opus_5_1m",
+        "cli": "claude",
+        "model": "claude-opus-5",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "sonnet_4_dated_200k",
+        "cli": "claude",
+        "model": "claude-sonnet-4-20250514",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "unknown_model_200k",
+        "cli": "claude",
+        "model": "some-other-model",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "no_model_200k",
+        "cli": "claude",
+        "model": null,
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "compaction_below_floor_no_cap",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 250000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 400000
+      },
+      {
+        "name": "codex_limit_below_floor_no_cap",
+        "cli": "codex",
+        "model": null,
+        "env": {},
+        "settings": null,
+        "codex_limit": 20000,
+        "threshold": null,
+        "floor": 30000,
+        "c": 20000,
+        "origem": "codex-config",
+        "switch": 180000
+      }
+    ]
+  }
 }
 
 const M = { role: 'user' as const, text: 'resumo', toolUses: [] }
@@ -362,7 +823,7 @@ test('config file: SYNCLABS_RELAY_CONFIG, then XDG, then APPDATA, then ~/.config
 })
 
 test('config parse: BOM stripped; broken JSON, wrong types and unknown keys fall back to the defaults', () => {
-  expect(parseConfig('\uFEFF{"lang":"en","threshold_tokens":100000,"handoff_dir":"/data/h","mode":"enforce"}')).toEqual({ lang: 'en', threshold: 100000, dir: '/data/h' })
+  expect(parseConfig('\uFEFF{"lang":"en","threshold_tokens":100000,"handoff_dir":"/data/h","mode":"enforce"}')).toEqual({ lang: 'en', threshold: 100000, dir: '/data/h', mode: 'enforce' })
   expect(parseConfig('{not json')).toEqual({})
   expect(parseConfig('[1]')).toEqual({})
   expect(parseConfig('{"threshold_tokens":"100k","handoff_dir":"relative/dir"}')).toEqual({})
@@ -413,6 +874,29 @@ test('language: env, then config, then the locale (pt* is pt-BR, anything else e
   expect(resolveLang('xx', undefined, 'de-DE')).toBe('en')
 })
 
+test('compaction point and switch point equal the shared vectors (Claude cases; tests/vectors/paths.json)', () => {
+  for (const k of vectors.compaction_cases.cases.filter(x => x.cli === 'claude')) {
+    const r = compactacao(k.model ?? undefined, k.env as Record<string, string>, k.settings)
+    expect([r.c, r.origem], k.name).toEqual([k.c, k.origem])
+    expect(pontoDeTroca(k.floor, k.threshold ?? 150_000, r.c), k.name).toBe(k.switch)
+  }
+  // the core's codex cases without a ceiling: the rule alone (floor + D)
+  expect(pontoDeTroca(30_000, 150_000, null)).toBe(180_000)
+  expect(pontoDeTroca(30_000, 150_000, 20_000)).toBe(180_000)
+})
+
+test('1M window: [1m] suffix, Fable, Sonnet 5+, Haiku 5.5+, Opus 4.7+; anything else (and unknown) is 200K', () => {
+  for (const m of ['claude-opus-4-7', 'claude-opus-4-9-20270101', 'claude-sonnet-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-1', 'x-model[1m]']) expect(janela1m(m), m).toBe(true)
+  for (const m of ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-sonnet-4-20250514', 'claude-haiku-5-4', 'claude-haiku-4-5-20251001', 'gpt-9', '', undefined]) expect(janela1m(m), String(m)).toBe(false)
+})
+
+test('a window from the API upgrades only a model the table does not know; DISABLE_1M still wins', () => {
+  expect(compactacao('opus', {}, null, 1_000_000).c).toBe(967_000) // alias: the API says 1M
+  expect(compactacao('claude-sonnet-4-6', {}, null, 1_000_000).c).toBe(200_000) // known and small: the table wins
+  expect(compactacao(undefined, { CLAUDE_CODE_DISABLE_1M_CONTEXT: '1' }, null, 1_000_000).c).toBe(200_000)
+  expect(compactacao(undefined, {}, null, 200_000).c).toBe(200_000)
+})
+
 test('avisa so 150k acima do piso; "Depois" adia ate crescer mais 50k', () => {
   const PISO = 95_000
   const LIM = PISO + LIMIAR_ACIMA
@@ -423,6 +907,15 @@ test('avisa so 150k acima do piso; "Depois" adia ate crescer mais 50k', () => {
   expect(deveAvisar(LIM, PISO, null, 'escrevendo')).toBe(false)
   expect(deveAvisar(LIM + 10_000, PISO, LIM, 'ocioso')).toBe(false)
   expect(deveAvisar(LIM + 50_000, PISO, LIM, 'ocioso')).toBe(true)
+})
+
+test('deveAvisar com o ponto de compactacao: piso 30k, janela de 200K troca em 166k; 1M em 180k; limiar 300k nao passa do teto', () => {
+  expect(deveAvisar(165_000, 30_000, null, 'ocioso', 150_000, 200_000)).toBe(false)
+  expect(deveAvisar(166_000, 30_000, null, 'ocioso', 150_000, 200_000)).toBe(true)
+  expect(deveAvisar(179_000, 30_000, null, 'ocioso', 150_000, 967_000)).toBe(false)
+  expect(deveAvisar(180_000, 30_000, null, 'ocioso', 150_000, 967_000)).toBe(true)
+  expect(deveAvisar(165_000, 30_000, null, 'ocioso', 300_000, 200_000)).toBe(false)
+  expect(deveAvisar(166_000, 30_000, null, 'ocioso', 300_000, 200_000)).toBe(true)
 })
 
 test('depois de um turno com contexto alto a faixa aparece e o botao pede a passagem', async ($, on) => {
@@ -465,7 +958,7 @@ test('depois de um turno com contexto alto a faixa aparece e o botao pede a pass
 
   const ui = await $.ui.mount({ ...FAIXA, surface: 'terminal' })
   await ui.press({ key: 'trocar' })
-  expect(enviado).toBe('handoff')
+  expect(enviado).toBe('relay')
   expect(await ui.find({ type: 'Text', text: /Gravando a passagem/ })).toBeDefined()
   await ui.unmount()
 })
@@ -544,7 +1037,7 @@ test('com agente vivo o clique espera; quando ele termina, a passagem e pedida',
 
   vivos = []
   await $.turn.complete({ ...TURNO, agentId: 'a1' })
-  expect(enviados).toEqual(['handoff'])
+  expect(enviados).toEqual(['relay'])
   expect(await ui.find({ type: 'Text', text: /Gravando a passagem/ })).toBeDefined()
   await ui.unmount()
 })
@@ -564,7 +1057,7 @@ test('agente ja terminado ou parado nao segura a passagem', async ($, on) => {
   const enviados = await cena($, on, () => [agente('completed'), agente('idle'), agente('killed')])
   const ui = await $.ui.mount({ ...FAIXA, surface: 'terminal' })
   await ui.press({ key: 'trocar' })
-  expect(enviados).toEqual(['handoff'])
+  expect(enviados).toEqual(['relay'])
   await ui.unmount()
 })
 
@@ -749,7 +1242,7 @@ const pessoa = ($: any, text = 'oi') => $.prompt.submit({ text, origin: { kind: 
 // setTimeout real (o relogio do teste e falso): deixa o agent.list atrasado terminar.
 const dormir = (ms: number) => new Promise<void>(r => void (globalThis as any).setTimeout(r, ms))
 const ADIADA = 'Troca adiada: você mandou uma mensagem'
-const CANCELADA = 'Troca cancelada e automático desligado. Para religar: /handoff auto'
+const CANCELADA = 'Troca cancelada e automático desligado. Para religar: /relay auto'
 
 // Sessao nova (piso zerado): um turno baixo fixa o piso em 30k e o contexto volta a 182k.
 const base = async ($: any, c: Ctx) => {
@@ -761,16 +1254,16 @@ const reiniciar = ($: any) => $.session.start({ cwd: '/', surface: 'terminal', i
 // /clear como no motor real (provado em claude -p 2.1.329, 20/11/2026): o session.end inteiro, inclusive depois do next(e),
 // roda com o id ANTIGO e o que ele grava no $.state fica na sessao antiga; so depois da cadeia o id troca e o $.state da
 // sessao nova nasce vazio, sem session.start.
-const ESTADO = ['tokens', 'piso', 'adiado', 'fase', 'auto', 'apresentado', 'interativo', 'restante', 'demorou', 'limiar', 'botao', 'carregado']
+const ESTADO = ['tokens', 'piso', 'adiado', 'fase', 'auto', 'apresentado', 'interativo', 'restante', 'demorou', 'limiar', 'botao', 'compact', 'carregado']
 const clearReal = async ($: any, c: Ctx, novo = 'cccc3333-0000-0000-0000-000000000000') => {
   await $.session.end({ reason: 'clear' } as never)
   c.sid.v = novo
   for (const k of ESTADO) c.zerados.add(k)
 }
 
-test('regra 1: /handoff auto alterna, persiste no store e avisa; /handoff sem argumento troca', async ($, on) => {
+test('regra 1: /relay auto alterna, persiste no store e avisa; /relay sem argumento troca', async ($, on) => {
   const c = await auto($, on)
-  await $.command.run({ command: 'handoff', args: 'auto' } as never)
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
   expect(c.toasts.some(t => /ligada/.test(t))).toBe(true)
   await reiniciar($) // le a escolha de volta do store (e zera o piso)
   await base($, c)
@@ -784,9 +1277,9 @@ test('regra 1: /handoff auto alterna, persiste no store e avisa; /handoff sem ar
   c.tokens.v += 60_000
   await turno($)
   expect(await contando($)).toBe(false)
-  await $.command.run({ command: 'handoff', args: '' } as never)
+  await $.command.run({ command: 'relay', args: '' } as never)
   await c.relogio.settle()
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
 })
 
 test('regra 1: botao Auto na faixa mostra e alterna', async ($, on) => {
@@ -846,18 +1339,18 @@ test('regra 4: contagem de 15 s com Agora e Cancelar; no fim troca pelo fluxo no
   await c.relogio.advance(11_000)
   expect(c.enviados).toEqual([])
   await c.relogio.advance(1_000)
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
   await c.relogio.advance(30_000)
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
 })
 
 test('regra 4: Agora troca ja', async ($, on) => {
   const c = await auto($, on, { ligado: true })
   await turno($)
   await apertar($, 'agora')
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
   await c.relogio.advance(30_000)
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
 })
 
 test('regra 4: agente que comeca durante a contagem: no fim dela a troca espera o agente', async ($, on) => {
@@ -868,7 +1361,7 @@ test('regra 4: agente que comeca durante a contagem: no fim dela a troca espera 
   expect(c.enviados).toEqual([])
   c.agentes.v = []
   await c.relogio.advance(2_000)
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
 })
 
 test('v0.1.1: com agente vivo (pending ou running) o auto nem comeca a contagem; o turno depois do fim dele dispara', async ($, on) => {
@@ -934,7 +1427,7 @@ for (const modo of ['manual', 'auto'] as const) {
     const c = await auto($, on, { ligado: modo === 'auto' })
     await turno($)
     await apertar($, modo === 'auto' ? 'agora' : 'trocar')
-    expect(c.enviados).toEqual(['handoff'])
+    expect(c.enviados).toEqual(['relay'])
     await turno($, { turnId: 't2' })
     await pessoa($)
     await c.relogio.advance(10_000)
@@ -1047,7 +1540,7 @@ test('regra 9: /clear durante a contagem a cancela e nenhum timer dispara depois
 test('regra 9: desligar o auto durante a contagem a cancela', async ($, on) => {
   const c = await auto($, on, { ligado: true })
   await turno($)
-  await $.command.run({ command: 'handoff', args: 'auto' } as never)
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
   await c.relogio.advance(60_000)
   expect(c.enviados).toEqual([])
   expect(await contando($)).toBe(false)
@@ -1127,7 +1620,7 @@ test('voo unico: dois cliques simultaneos em Trocar (agent.list lento) enviam pa
   const ui = await $.ui.mount({ ...FAIXA, surface: 'terminal' })
   await Promise.all([ui.press({ key: 'trocar' }), ui.press({ key: 'trocar' })])
   await dormir(60)
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
   await ui.unmount()
 })
 
@@ -1161,7 +1654,7 @@ test('clique com turno da principal em andamento: o fim do turno ANTERIOR nao de
   await turno($)
   await $.turn.start({ text: 'trabalho', turnId: 't9' })
   await apertar($, 'trocar') // a passagem entra na fila atras do t9
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
   c.gravada.v = false
   await $.turn.complete({ ...TURNO, turnId: 't9' })
   expect(c.toasts.some(t => /não foi gravada/.test(t))).toBe(false)
@@ -1227,14 +1720,14 @@ test('submit que rejeita volta a ocioso, solta a trava, avisa e um novo clique f
   const c = await auto($, on)
   await turno($) // sobe a faixa (tokens atuais)
   c.submitFalha.v = true
-  await $.command.run({ command: 'handoff', args: '' } as never)
+  await $.command.run({ command: 'relay', args: '' } as never)
   await c.relogio.settle()
   expect(c.toasts).toContain(FALHA_ENVIO)
   expect(await botao($, 'trocar')).toBe(true) // fase ocioso: a faixa nao ficou em "Gravando"
   c.submitFalha.v = false
-  await $.command.run({ command: 'handoff', args: '' } as never)
+  await $.command.run({ command: 'relay', args: '' } as never)
   await c.relogio.settle()
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
 })
 
 test('submit que rejeita no modo auto adia 50k, sem nova contagem', async ($, on) => {
@@ -1251,7 +1744,7 @@ test('submit que rejeita no modo auto adia 50k, sem nova contagem', async ($, on
 test('agent.list que nunca responde nao prende a trava: estoura em 5 s, aguarda e reconfere', async ($, on) => {
   const c = await auto($, on)
   c.travado.v = true
-  await $.command.run({ command: 'handoff', args: '' } as never)
+  await $.command.run({ command: 'relay', args: '' } as never)
   await c.relogio.advance(5_000)
   await c.relogio.settle()
   expect(c.enviados).toEqual([]) // agente vivo desconhecido: nao envia
@@ -1260,7 +1753,7 @@ test('agent.list que nunca responde nao prende a trava: estoura em 5 s, aguarda 
   c.travado.v = false
   await c.relogio.advance(2_000) // proximo tique de reconferencia
   await c.relogio.settle()
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
 })
 
 // ---------- 0.4.1: pendencia guardada pela sessao nova ----------
@@ -1312,9 +1805,9 @@ test('cancelar a troca zera o pedido: /clear digitado 20 min depois nao leva a p
   }
 })
 
-test('/handoff diz o estado: pronta, escrevendo e aguardando', async ($, on) => {
+test('/relay diz o estado: pronta, escrevendo e aguardando', async ($, on) => {
   const c = await auto($, on, { ligado: false })
-  const cmd = async () => ((await $.command.run({ command: 'handoff', args: '' } as never)) as any).text as string
+  const cmd = async () => ((await $.command.run({ command: 'relay', args: '' } as never)) as any).text as string
   await turno($)
   c.agentes.v = [agente('running')]
   await apertar($, 'trocar') // aguardando
@@ -1328,17 +1821,17 @@ test('/handoff diz o estado: pronta, escrevendo e aguardando', async ($, on) => 
   expect(await cmd()).toMatch(/já está gravada em .*aaaa1111\.md\. Digite \/clear/)
 })
 
-// passagem digitada pela pessoa inicia a troca como o clique, sem reenviar "passagem" (a propria mensagem segue).
+// "relay" digitado pela pessoa inicia a troca como o clique, sem reenviar (a propria mensagem segue).
 const digitada = async ($: any, c: Ctx, texto: string) => {
   await pessoa($, texto)
   await turno($, { turnId: 't2' })
   await c.relogio.advance(10_000)
 }
 
-test('digitar "passagem" em ocioso inicia a troca e o /clear; o band nao poe context', async ($, on) => {
+test('digitar "relay" em ocioso inicia a troca e o /clear; o band nao poe context', async ($, on) => {
   const c = await auto($, on, { ligado: false })
-  await digitada($, c, 'passagem')
-  expect(c.enviados).toEqual(['passagem']) // so a mensagem da pessoa: sem segundo envio
+  await digitada($, c, 'relay')
+  expect(c.enviados).toEqual(['relay']) // so a mensagem da pessoa: sem segundo envio
   expect(c.limpos).toBe(1)
   expect(c.toasts).not.toContain(ADIADA)
   await $.session.end({ reason: 'clear' } as never)
@@ -1347,10 +1840,10 @@ test('digitar "passagem" em ocioso inicia a troca e o /clear; o band nao poe con
   expect(semContexto(c)).toBe(true)
 })
 
-test('digitar "passagem" com /clear recusado fica pronta; o /clear manual segue o mesmo fluxo (toast)', async ($, on) => {
+test('digitar "relay" com /clear recusado fica pronta; o /clear manual segue o mesmo fluxo (toast)', async ($, on) => {
   const c = await auto($, on, { ligado: false })
   c.clearFalha.v = true
-  await digitada($, c, 'passagem')
+  await digitada($, c, 'relay')
   expect(c.toasts).toContain('Passagem gravada. Digite /clear para abrir a sessão nova já com ela.')
   await $.session.end({ reason: 'clear' } as never)
   expect(c.toasts).toContain('Passagem gravada; sessão nova aberta.')
@@ -1358,44 +1851,44 @@ test('digitar "passagem" com /clear recusado fica pronta; o /clear manual segue 
   expect(semContexto(c)).toBe(true)
 })
 
-test('" Passagem " com espacos e maiuscula vale igual', async ($, on) => {
+test('" Relay " com espacos e maiuscula vale igual', async ($, on) => {
   const c = await auto($, on, { ligado: false })
-  await digitada($, c, ' Passagem ')
+  await digitada($, c, ' Relay ')
   expect(c.limpos).toBe(1)
 })
 
-test('"/handoff" como texto vale igual', async ($, on) => {
+test('"/relay" como texto vale igual', async ($, on) => {
   const c = await auto($, on, { ligado: false })
-  await digitada($, c, '/handoff')
+  await digitada($, c, '/relay')
   expect(c.limpos).toBe(1)
 })
 
-test('digitar outra coisa em ocioso nao inicia nada', async ($, on) => {
+test('digitar outra coisa em ocioso nao inicia nada (handoff e passagem deixaram de valer)', async ($, on) => {
   const c = await auto($, on, { ligado: false })
-  await digitada($, c, 'passagem de turno')
+  for (const texto of ['relay now', 'handoff', '/handoff', 'passagem', '/passagem']) await digitada($, c, texto)
   expect(c.limpos).toBe(0)
   await $.session.end({ reason: 'clear' } as never)
   await pessoa($, 'oi')
   expect(c.contextos.at(-1) ?? []).toEqual([])
 })
 
-test('digitar "passagem" em escrevendo nao cancela nem duplica', async ($, on) => {
+test('digitar "relay" em escrevendo nao cancela nem duplica', async ($, on) => {
   const c = await auto($, on, { ligado: false })
   await turno($)
   await apertar($, 'trocar') // escrevendo, envio do plugin
-  await pessoa($, 'passagem')
+  await pessoa($, 'relay')
   expect(c.toasts).not.toContain(ADIADA)
   await turno($, { turnId: 't2' })
   await c.relogio.advance(10_000)
   expect(c.limpos).toBe(1)
 })
 
-test('digitar "passagem" durante a contagem inicia a troca (como Agora), sem cancelar', async ($, on) => {
+test('digitar "relay" durante a contagem inicia a troca (como Agora), sem cancelar', async ($, on) => {
   const c = await auto($, on, { ligado: true })
   await turno($)
   await c.relogio.advance(1_000)
   expect(await contando($)).toBe(true)
-  await pessoa($, 'passagem')
+  await pessoa($, 'relay')
   expect(c.toasts).not.toContain(ADIADA)
   expect(await contando($)).toBe(false)
   await turno($, { turnId: 't2' })
@@ -1413,7 +1906,7 @@ test('agente waiting nao segura: com 4 waiting a troca e o /clear seguem', async
   c.agentes.v = [agente('waiting'), agente('waiting'), agente('waiting'), agente('waiting')]
   await turno($)
   await apertar($, 'trocar')
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
   await turno($, { turnId: 't2' })
   await c.relogio.advance(10_000)
   expect(c.limpos).toBe(1)
@@ -1438,7 +1931,7 @@ test('aguardando mais de 60 s: a faixa oferece "Trocar mesmo assim", que envia s
   expect(await botao($, 'forcar')).toBe(true)
   expect(await olhar($, { type: 'Text', text: /Aguardando 1 agente…/ })).toBeDefined()
   await apertar($, 'forcar')
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
 })
 
 test('aguardando mais de 60 s: Cancelar volta ao botao e nada e enviado', async ($, on) => {
@@ -1579,87 +2072,96 @@ test('pasta: sem nenhuma fonte, avisa uma vez e nao troca nem manda /clear', asy
   expect(c.escritas.size).toBe(0)
 })
 
-// Indicador na linha de status ($.ui.status) e /handoff limiar.
+// Indicador na linha de status ($.ui.status) e /relay status.
 const comStatus = (on: any) => {
   const textos: (string | undefined)[] = []
   on('ui.status', (_: any, e: any) => (textos.push(e.text), { value: undefined }))
   return { textos, ultimo: () => textos[textos.length - 1] }
 }
-const limiarCmd = async ($: any, args: string) =>
-  ((await $.command.run({ command: 'handoff', args } as never)) as any).text as string
 
-test('indicador: medindo, +Nk/limiar, reage ao /handoff auto e mostra trocando na contagem', async ($, on) => {
+test('indicador: medindo, +Nk/limiar, reage ao /relay auto e mostra trocando na contagem', async ($, on) => {
   const s = comStatus(on)
   const c = await auto($, on, { ligado: true })
   await reiniciar($)
-  expect(s.ultimo()).toBe('passagem auto · medindo')
+  expect(s.ultimo()).toBe('Sync_Relay · auto ligado · medindo')
   await base($, c)
   c.tokens.v = 112_000
   await turno($, { turnId: 't2' })
-  expect(s.ultimo()).toBe('passagem auto · +82k/150k')
-  await $.command.run({ command: 'handoff', args: 'auto' } as never)
-  expect(s.ultimo()).toBe('passagem · +82k/150k')
-  await $.command.run({ command: 'handoff', args: 'auto' } as never)
+  expect(s.ultimo()).toBe('Sync_Relay · auto ligado · 82k de 150k')
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
+  expect(s.ultimo()).toBe('Sync_Relay · auto desligado · 82k de 150k')
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
   c.tokens.v = 182_000
   await turno($, { turnId: 't3' })
   expect(await contando($)).toBe(true)
-  expect(s.ultimo()).toBe('passagem · trocando…')
+  expect(s.ultimo()).toBe('Sync_Relay · auto ligado · trocando…')
   await apertar($, 'cancelar')
-  expect(s.ultimo()).toBe('passagem · +152k/150k') // Cancelar desligou o auto
+  expect(s.ultimo()).toBe('Sync_Relay · auto desligado · 152k de 150k') // Cancelar desligou o auto
+})
+
+test('indicador (en): o nome Sync_Relay fixo, auto on/off, "45k of 150k" e o /relay button nao tira o texto', async ($, on) => {
+  const s = comStatus(on)
+  const c = await auto($, on, { ligado: false, penv: { SYNCLABS_RELAY_LANG: 'en' } })
+  await reiniciar($)
+  await base($, c)
+  c.tokens.v = 75_000
+  await turno($, { turnId: 't2' })
+  expect(s.ultimo()).toBe('Sync_Relay · auto off · 45k of 150k')
+  await $.command.run({ command: 'relay', args: 'button' } as never) // esconde so o botao
+  expect(await botao($, 'auto')).toBe(false)
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
+  expect(s.ultimo()).toBe('Sync_Relay · auto on · 45k of 150k')
 })
 
 test('indicador: sessao nao interativa nao mostra nada', async ($, on) => {
   const s = comStatus(on)
   const c = await auto($, on, { ligado: true, interativo: false })
   await turno($, { turnId: 't2' })
-  await $.command.run({ command: 'handoff', args: 'auto' } as never)
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
   expect(c.toasts.length).toBeGreaterThan(0)
   expect(s.textos.filter(t => t !== undefined)).toEqual([])
 })
 
-test('/handoff limiar 5k: o auto dispara com +5k; a resposta diz o valor', async ($, on) => {
-  const c = await auto($, on, { ligado: true })
-  expect(await limiarCmd($, 'limiar')).toBe('Limiar: +150k acima do piso')
-  expect(await limiarCmd($, 'limiar 5k')).toBe('Limiar: +5k acima do piso')
-  expect(c.mem.get('limiar')).toBe(5_000)
-  await base($, c)
-  c.tokens.v = 36_000
+const statusCmd = async ($: any) => ((await $.command.run({ command: 'relay', args: 'status' } as never)) as any).text as string
+
+test('/relay status (pt-BR): trava, auto, contexto, ponto de troca com a origem e a pasta das passagens', async ($, on) => {
+  on('session.model', () => ({ value: 'claude-opus-4-7' }))
+  const c = await auto($, on, { ligado: false })
+  c.tokens.v = 182_000
   await turno($, { turnId: 't2' })
-  expect(await contando($)).toBe(true)
+  expect(await statusCmd($)).toBe(
+    'Trava: enforce · auto: desligado · contexto: 182k tokens · troca em 180k = piso 30k + 150k (compactação em 967k: padrão do modelo) · passagens: C:/Users/x/AppData/Local/synclabs-relay/handoffs',
+  )
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
+  expect(await statusCmd($)).toMatch(/auto: ligado/)
 })
 
-test('/handoff limiar aceita 150000 e recusa valor invalido sem mudar o limiar', async ($, on) => {
-  const c = await auto($, on, { ligado: true })
-  expect(await limiarCmd($, 'limiar 200000')).toBe('Limiar: +200k acima do piso')
-  for (const ruim of ['4k', '901k', '900001', 'abc', '-5k', '0', '1.5k']) {
-    expect(await limiarCmd($, `limiar ${ruim}`)).toMatch(/inválido/)
+test('/relay status (en) com janela de 200K: o teto de 80% do caminho aparece na origem', async ($, on) => {
+  on('session.model', () => ({ value: 'claude-sonnet-4-6' }))
+  const c = await auto($, on, { ligado: true, penv: { SYNCLABS_RELAY_LANG: 'en' } })
+  c.tokens.v = 100_000
+  await turno($, { turnId: 't2' })
+  expect(await statusCmd($)).toBe(
+    'Lock: enforce · auto: on · context: 100k tokens · switch at 166k = floor 30k + 136k (80% of the way to compaction at 200k: model default) · handoffs: C:/Users/x/AppData/Local/synclabs-relay/handoffs',
+  )
+})
+
+test('/relay status: sem piso ainda diz medindo; o limiar do env aparece como D', async ($, on) => {
+  const c = await sobre($, on, { SYNCLABS_RELAY_BAND_THRESHOLD: '5k' })
+  await clearReal($, c)
+  await c.relogio.advance(1_000)
+  expect(await statusCmd($)).toMatch(/contexto: medindo · troca em medindo/)
+  c.tokens.v = 30_000
+  await turno($, { turnId: 'n1' })
+  expect(await statusCmd($)).toMatch(/troca em 35k = piso 30k \+ 5k \(compactação em 967k/)
+})
+
+test('/relay: argumento que nao e auto, status ou button mostra o uso (sem threshold, limiar, padrao, botao)', async ($, on) => {
+  await auto($, on, { ligado: false })
+  for (const a of ['xyz', 'threshold', 'threshold 5k', 'limiar', 'limiar 5k', 'padrao', 'default', 'botao', 'handoff', 'auto now']) {
+    const t = ((await $.command.run({ command: 'relay', args: a } as never)) as any).text as string
+    expect(t, a).toBe('Uso: /relay (troca agora), /relay auto (liga ou desliga a troca automática), /relay status (mostra o estado) ou /relay button (esconde ou mostra o botão).')
   }
-  expect(await limiarCmd($, 'limiar 900k')).toBe('Limiar: +900k acima do piso')
-  expect(await limiarCmd($, 'limiar 200k')).toBe('Limiar: +200k acima do piso')
-  expect(await limiarCmd($, 'limiar 4k')).toMatch(/inválido/)
-  expect(await limiarCmd($, 'limiar')).toBe('Limiar: +200k acima do piso')
-  expect(c.mem.get('limiar')).toBe(200_000)
-})
-
-test('/handoff limiar padrao volta a 150k', async ($, on) => {
-  const c = await auto($, on, { ligado: true })
-  await limiarCmd($, 'limiar 5k')
-  expect(await limiarCmd($, 'limiar padrao')).toBe('Limiar: +150k acima do piso')
-  await base($, c)
-  c.tokens.v = 36_000
-  await turno($, { turnId: 't2' })
-  expect(await contando($)).toBe(false)
-})
-
-test('o limiar persiste: session.start novo le do store', async ($, on) => {
-  const c = await auto($, on, { ligado: true })
-  await limiarCmd($, 'limiar 5k')
-  await reiniciar($)
-  expect(await limiarCmd($, 'limiar')).toBe('Limiar: +5k acima do piso')
-  await base($, c)
-  c.tokens.v = 36_000
-  await turno($, { turnId: 't2' })
-  expect(await contando($)).toBe(true)
 })
 
 test('/clear zera o $.state do motor: o mod reinicia (interativo, auto, limiar) e a 2a troca automatica dispara', async ($, on) => {
@@ -1669,7 +2171,7 @@ test('/clear zera o $.state do motor: o mod reinicia (interativo, auto, limiar) 
   await clearReal($, c) // sem session.start na sessao nova, como no motor
   c.tokens.v = 30_000
   await turno($, { turnId: 'n1' })
-  expect(s.ultimo()).toBe('passagem auto · +0k/150k') // saiu de "medindo"
+  expect(s.ultimo()).toBe('Sync_Relay · auto ligado · 0k de 150k') // saiu de "medindo"
   c.tokens.v = 182_000
   await turno($, { turnId: 'n2' })
   expect(await contando($)).toBe(true)
@@ -2030,7 +2532,7 @@ test('rastro: quem ligou ou desligou o auto (botao, comando, apresentacao)', asy
   const c = await nova($, on, { ligado: true })
   await apertar($, 'alternar') // apresentacao: Desligar automatico
   await apertar($, 'auto')
-  await $.command.run({ command: 'handoff', args: 'auto' } as never)
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
   await dormir(80)
   const t = rastroTudo(c)
   expect(t).toMatch(/auto ligado -> desligado \(apresentacao\)/)
@@ -2057,15 +2559,16 @@ const sobre = async ($: any, on: any, penv: Record<string, string> = SOBRE) => {
 const semGravar = (c: Ctx) => {
   expect(c.mem.has('auto')).toBe(false)
   expect(c.mem.has('limiar')).toBe(false)
+  expect(c.mem.has('botao')).toBe(false)
 }
 
 test('env: SYNCLABS_RELAY_BAND_THRESHOLD e SYNCLABS_RELAY_BAND_AUTO valem na sessao, nao gravam no store e deixam rastro', async ($, on) => {
   const c = await sobre($, on)
-  expect(await limiarCmd($, 'limiar')).toMatch(/^Limiar: [+]5k acima do piso/)
   c.tokens.v = 30_000
   await turno($, { turnId: 't1' })
   c.tokens.v = 36_000
   await turno($, { turnId: 't2' })
+  expect(await statusCmd($)).toMatch(/piso 30k \+ 5k/)
   expect(await contando($)).toBe(true) // auto ligado por env, +6k >= 5k
   semGravar(c)
   expect(rastroTudo(c)).toMatch(/sobrescrita env limiar=5000 auto=1/)
@@ -2079,20 +2582,19 @@ test('env: vale depois do /clear da propria sessao', async ($, on) => {
   c.tokens.v = 36_000
   await turno($, { turnId: 'n2' })
   expect(await contando($)).toBe(true)
-  expect(await limiarCmd($, 'limiar')).toMatch(/^Limiar: [+]5k acima do piso/)
+  expect(await statusCmd($)).toMatch(/piso 30k \+ 5k/)
   semGravar(c)
 })
 
 test('env: comando e botao dentro da sessao mudam so a sessao, avisam e sobrevivem ao /clear', async ($, on) => {
   const c = await sobre($, on)
-  await $.command.run({ command: 'handoff', args: 'auto' } as never) // desliga
+  await $.command.run({ command: 'relay', args: 'auto' } as never) // desliga
   expect(c.toasts.some(t => /só nesta sessão \(SYNCLABS_RELAY_BAND_\*\)/.test(t))).toBe(true)
-  expect(await limiarCmd($, 'limiar 8k')).toMatch(/Limiar: \+8k.*só nesta sessão \(SYNCLABS_RELAY_BAND_\*\)/)
   await turno($, { turnId: 't0' })
   await apertar($, 'auto') // liga de novo
   await apertar($, 'auto') // desliga
   await clearReal($, c) // sem session.start na sessao nova, como no motor
-  expect(await limiarCmd($, 'limiar')).toMatch(/Limiar: \+8k/)
+  expect(await statusCmd($)).toMatch(/auto: desligado/)
   c.tokens.v = 30_000
   await turno($, { turnId: 'n1' })
   c.tokens.v = 60_000
@@ -2103,26 +2605,24 @@ test('env: comando e botao dentro da sessao mudam so a sessao, avisam e sobreviv
 
 test('env invalido: ignora a variavel, deixa uma linha no rastro e o resto segue no store', async ($, on) => {
   const c = await sobre($, on, { SYNCLABS_RELAY_BAND_THRESHOLD: 'abc', SYNCLABS_RELAY_BAND_AUTO: '2' })
-  expect(await limiarCmd($, 'limiar')).toBe('Limiar: +150k acima do piso')
+  expect(await statusCmd($)).toMatch(/piso 30k \+ 150k/)
   const t = rastroTudo(c)
   expect(t).toMatch(/SYNCLABS_RELAY_BAND_THRESHOLD.*invalido/)
   expect(t).toMatch(/SYNCLABS_RELAY_BAND_AUTO.*invalido/)
   expect(t).not.toMatch(/sobrescrita env limiar/)
-  await $.command.run({ command: 'handoff', args: 'auto' } as never)
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
   expect(c.mem.get('auto')).toBe(true) // sem sobrescrita valida: grava como sempre
 })
 
 test('sem env: nada muda (grava no store, sem rastro de sobrescrita)', async ($, on) => {
   const c = await sobre($, on, {})
-  await $.command.run({ command: 'handoff', args: 'auto' } as never)
-  await limiarCmd($, 'limiar 7k')
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
   expect(c.mem.get('auto')).toBe(true)
-  expect(c.mem.get('limiar')).toBe(7_000)
   expect(rastroTudo(c)).not.toMatch(/sobrescrita/)
 })
 
-// 0.6.9: interruptor /handoff botao esconde e mostra o botao fixo "Passagem auto" (padrao: visivel; store, chave 'botao').
-const botaoCmd = ($: any) => $.command.run({ command: 'handoff', args: 'botao' } as never)
+// /relay button esconde e mostra o botao fixo "Passagem auto" so nesta sessao; o padrao inicial vem da chave `button` do config.json.
+const botaoCmd = ($: any) => $.command.run({ command: 'relay', args: 'button' } as never)
 const semFaixa = async ($: any, on: any, o: object = {}) => {
   const c = await auto($, on, o)
   c.tokens.v = 40_000 // abaixo do limiar: sem faixa de troca
@@ -2130,32 +2630,29 @@ const semFaixa = async ($: any, on: any, o: object = {}) => {
   return c
 }
 
-test('botao: sem valor no store o botao fixo aparece (padrao visivel)', async ($, on) => {
+test('botao: sem config o botao fixo aparece (padrao visivel)', async ($, on) => {
   const c = await semFaixa($, on)
   expect(c.mem.has('botao')).toBe(false)
   expect(await botao($, 'auto')).toBe(true)
 })
 
-test('botao: /handoff botao esconde, grava e avisa; de novo mostra e avisa', async ($, on) => {
+test('botao: /relay button esconde e avisa; de novo mostra e avisa; nada vai ao store', async ($, on) => {
   const c = await semFaixa($, on)
   const r = await botaoCmd($)
-  expect(c.mem.get('botao')).toBe(false)
-  expect(c.toasts).toContain('Botão oculto. Para mostrar de novo: /handoff botao.')
-  expect(r.text).toBe('Botão oculto. Para mostrar de novo: /handoff botao.')
+  expect(c.toasts).toContain('Botão oculto. Para mostrar de novo: /relay button.')
+  expect(r.text).toBe('Botão oculto. Para mostrar de novo: /relay button.')
   expect(await botao($, 'auto')).toBe(false)
   await botaoCmd($)
-  expect(c.mem.get('botao')).toBe(true)
   expect(c.toasts).toContain('Botão visível.')
   expect(await botao($, 'auto')).toBe(true)
+  expect(c.mem.has('botao')).toBe(false)
 })
 
-test('botao: oculto vale nas proximas sessoes (store)', async ($, on) => {
+test('botao: oculto por comando vale o resto da sessao, inclusive depois do /clear', async ($, on) => {
   const c = await semFaixa($, on)
   await botaoCmd($)
-  await reiniciar($)
-  await base($, c)
-  c.tokens.v = 40_000
-  await turno($)
+  await clearReal($, c)
+  await c.relogio.advance(1_000) // recarga da sessao nova
   expect(await botao($, 'auto')).toBe(false)
 })
 
@@ -2187,21 +2684,6 @@ test('botao: oculto, a apresentacao unica ainda aparece se nao foi vista', async
   expect(await botao($, 'entendi')).toBe(true)
 })
 
-test('botao: com a sobrescrita SYNCLABS_RELAY_BAND_* nao grava no store, avisa e vale na sessao', async ($, on) => {
-  const c = await sobre($, on)
-  c.tokens.v = 40_000
-  await turno($)
-  const r = await botaoCmd($)
-  expect(r.text).toMatch(/^Botão oculto\. Para mostrar de novo: \/handoff botao\..*só nesta sessão \(SYNCLABS_RELAY_BAND_\*\)/)
-  expect(c.toasts.some(t => /^Botão oculto.*só nesta sessão \(SYNCLABS_RELAY_BAND_\*\)/.test(t))).toBe(true)
-  expect(c.mem.has('botao')).toBe(false)
-  expect(await botao($, 'auto')).toBe(false)
-  await clearReal($, c) // sem session.start na sessao nova, como no motor
-  await c.relogio.advance(1_000) // recarga da sessao nova
-  expect(await botao($, 'auto')).toBe(false) // sobrevive ao /clear
-  expect(c.mem.has('botao')).toBe(false)
-})
-
 test('botao: cada troca vai ao rastro com a origem', async ($, on) => {
   const c = await semFaixa($, on)
   await botaoCmd($)
@@ -2211,11 +2693,9 @@ test('botao: cada troca vai ao rastro com a origem', async ($, on) => {
   expect(rastroTudo(c)).toMatch(/botao oculto -> visivel \(comando\)/)
 })
 
-test('botao: a mensagem de uso cita botao e a apresentacao diz como ocultar', async ($, on) => {
+test('botao: a apresentacao diz como ocultar', async ($, on) => {
   await nova($, on)
-  const r = await $.command.run({ command: 'handoff', args: 'xyz' } as never)
-  expect(r.text).toMatch(/\/handoff botao/)
-  expect(await texto2($, /\/handoff botao/)).toBe(true)
+  expect(await texto2($, /\/relay button/)).toBe(true)
 })
 
 // 0.6.10: no motor real, depois de CADA /clear da troca automatica, a apresentacao de primeira instalacao voltava (store com
@@ -2239,10 +2719,10 @@ test('/clear real: logo depois, a sessao nova carrega store e env sem esperar tu
   await c.relogio.advance(1_000)
   expect(await apresentacao($)).toBe(false)
   expect(await rotuloAuto($)).toBe('Passagem auto: ligado')
-  expect(s.ultimo()).toBe('passagem auto · medindo')
+  expect(s.ultimo()).toBe('Sync_Relay · auto ligado · medindo')
   c.tokens.v = 30_000
   await turno($, { turnId: 'n1' })
-  expect(s.ultimo()).toBe('passagem auto · +0k/5k')
+  expect(s.ultimo()).toBe('Sync_Relay · auto ligado · 0k de 5k')
   semGravar(c)
 })
 
@@ -2259,7 +2739,7 @@ test('/clear real sem env: auto ligado no store segue ligado e a apresentacao vi
 test('/clear real: comando antes da recarga parte do estado certo', async ($, on) => {
   const c = await auto($, on, { ligado: true })
   await clearReal($, c)
-  await $.command.run({ command: 'handoff', args: 'auto' } as never)
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
   expect(c.mem.get('auto')).toBe(false) // desligou (estava ligado), nao ligou de novo
 })
 
@@ -2282,7 +2762,7 @@ test('store ilegivel depois do /clear: botao e faixa com 400k e a linha de statu
   await turno($, { turnId: 'n1' })
   c.tokens.v = 400_000
   await turno($, { turnId: 'n2' })
-  expect(s.ultimo()).toBe('passagem · +370k/150k')
+  expect(s.ultimo()).toBe('Sync_Relay · auto desligado · 370k de 150k')
   expect(await botao($, 'trocar')).toBe(true) // faixa
   await dormir(80)
   expect(rastroTudo(c)).toMatch(/carregar falhou: [^;]+; usando padroes/)
@@ -2322,7 +2802,7 @@ test('hot reload: o 1o turno depois do reload preserva interativo, piso e fase',
   c.zerados.add('carregado') // o atomo novo do reload
   c.tokens.v = 40_000
   await turno($, { turnId: 'r1' })
-  expect(s.ultimo()).toBe('passagem auto · +10k/150k') // interativo e piso (30k) mantidos
+  expect(s.ultimo()).toBe('Sync_Relay · auto ligado · 10k de 150k') // interativo e piso (30k) mantidos
   c.tokens.v = 190_000
   await turno($, { turnId: 'r2' })
   expect(await contando($)).toBe(true) // fase ociosa e auto vivos: a contagem dispara
@@ -2336,7 +2816,7 @@ test('rastro: carregado via=<origem> id auto limiar interativo', async ($, on) =
   c.zerados.add('carregado')
   await turno($, { turnId: 'n1' })
   c.zerados.add('carregado')
-  await $.command.run({ command: 'handoff', args: 'limiar' } as never)
+  await $.command.run({ command: 'relay', args: 'status' } as never)
   await dormir(80)
   const r = rastroTudo(c)
   expect(r).toMatch(/carregado via=session\.start id=aaaa1111 auto=true limiar=150000 interativo=true/)
@@ -2468,11 +2948,11 @@ test('0.6.12 layout: botoes em linha propria na apresentacao', async ($, on) => 
 test('0.6.12 acentos: gravando e resposta do comando', async ($, on) => {
   const c = await auto($, on, { ligado: false })
   await turno($)
-  const r = await $.command.run({ command: 'handoff', args: '' } as never)
+  const r = await $.command.run({ command: 'relay', args: '' } as never)
   expect(r.text).toBe('Gravando a passagem; a sessão nova abre sozinha quando ela estiver pronta.')
   await c.relogio.settle()
   expect(await olhar($, { type: 'Text', text: /Gravando a passagem para abrir a sessão nova\.\.\./ })).toBeDefined()
-  expect((await $.command.run({ command: 'handoff', args: '' } as never)).text).toBe('Já estou gravando a passagem.')
+  expect((await $.command.run({ command: 'relay', args: '' } as never)).text).toBe('Já estou gravando a passagem.')
 })
 
 test('0.6.12 acentos: passagem nao gravada avisa com acento', async ($, on) => {
@@ -2481,7 +2961,7 @@ test('0.6.12 acentos: passagem nao gravada avisa com acento', async ($, on) => {
   await turno($)
   await apertar($, 'agora')
   await turno($, { turnId: 't2' })
-  expect(c.toasts).toContain('A passagem não foi gravada; a sessão continua. Clique de novo ou digite /handoff.')
+  expect(c.toasts).toContain('A passagem não foi gravada; a sessão continua. Clique de novo ou digite /relay.')
 })
 
 test('0.6.13: duplo clique em Cancelar gera 1 toast e 1 linha de rastro', async ($, on) => {
@@ -2520,9 +3000,10 @@ test('0.6.13: store lento no Cancelar: a contagem chega a 0 e nada e enviado', a
 // ---------- product: language, config and the handoff word ----------
 
 /** One session with its own env and config file; fs, store and prompts are fakes, nothing leaves the machine. */
-async function cfgScene($: any, on: any, env: Record<string, string>, cfg: string | null | (() => string | null), tokens: { v: number }, mem?: Map<string, unknown>) {
+async function cfgScene($: any, on: any, env: Record<string, string>, cfg: string | null | (() => string | null), tokens: { v: number }, mem?: Map<string, unknown>, extra: { janela?: number; modelo?: string; settings?: string } = {}) {
   const enviados: string[] = []
   const registrados: string[] = []
+  const cfgLidos: string[] = []
   if (mem) {
     on('store.get', (_: any, e: any) => ({ value: mem.get(e.key) }))
     on('store.set', (_: any, e: any) => (mem.set(e.key, e.value), { value: undefined }))
@@ -2533,11 +3014,17 @@ async function cfgScene($: any, on: any, env: Record<string, string>, cfg: strin
   on('env.get', (_: any, e: any) => ({ value: env[e.name] }))
   on('fs.read', (_: any, e: any) => {
     const txt = typeof cfg === 'function' ? cfg() : cfg
-    if (txt !== null && String(e.path).replaceAll('\\', '/') === env.SYNCLABS_RELAY_CONFIG) return { value: txt }
+    const caminho = String(e.path).replaceAll('\\', '/')
+    if (txt !== null && caminho === env.SYNCLABS_RELAY_CONFIG) return { value: txt }
+    if (extra.settings !== undefined && caminho.endsWith('/settings.json')) {
+      cfgLidos.push(caminho)
+      return { value: extra.settings }
+    }
     throw new Error('nao existe')
   })
+  if (extra.modelo !== undefined) on('session.model', () => ({ value: extra.modelo }))
   on('session.usage', () => ({
-    value: { startedAt: 0, context: { tokens: tokens.v, window: 1_000_000, percent: 18 }, rateLimits: [], cost: { usd: 0 } },
+    value: { startedAt: 0, context: { tokens: tokens.v, window: extra.janela ?? 1_000_000, percent: 18 }, rateLimits: [], cost: { usd: 0 } },
   }))
   on('prompt.submit', (_: any, e: any) => {
     enviados.push(e.text)
@@ -2554,7 +3041,7 @@ async function cfgScene($: any, on: any, env: Record<string, string>, cfg: strin
   on('session.cwd', () => ({ value: 'C:/Users/x/p' }))
   on('session.id', () => ({ value: 'aaaa1111-0000-0000-0000-000000000000' }))
   await $.turn.complete(TURNO) // base turn: fixes the baseline at 30k
-  return { enviados, registrados }
+  return { enviados, registrados, cfgLidos }
 }
 const botaoTrocar = async ($: any) => {
   const ui = await $.ui.mount({ ...FAIXA, surface: 'terminal' })
@@ -2603,16 +3090,16 @@ test('without a config the default 150k applies (the same +101k does not show th
   expect(await botaoTrocar($)).toBeUndefined()
 })
 
-test('the button sends "handoff" and the /handoff command is registered', async ($, on) => {
+test('the button sends "relay" and the /relay command is registered', async ($, on) => {
   const tokens = { v: 30_000 }
   const c = await cfgScene($, on, { SYNCLABS_RELAY_LANG: 'en' }, null, tokens)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  expect(c.registrados).toEqual(['handoff'])
+  expect(c.registrados).toEqual(['relay'])
   tokens.v = 182_000
   await $.turn.complete(TURNO)
   const ui = await $.ui.mount({ ...FAIXA, surface: 'terminal' })
   await ui.press({ key: 'trocar' })
-  expect(c.enviados).toEqual(['handoff'])
+  expect(c.enviados).toEqual(['relay'])
   expect(await ui.find({ type: 'Text', text: /Writing the handoff/ })).toBeDefined()
   await ui.unmount()
 })
@@ -2634,21 +3121,96 @@ test('config handoff_dir (absolute) is where the band looks for the file', async
   for (const p of perguntados) expect(p.startsWith('D:/data/handoffs/c-users-x-p-')).toBe(true)
 })
 
-test('/handoff threshold default clears the store key, so a later config change applies again', async ($, on) => {
+const FIXO = 'Auto handoff: off'
+const rotuloFixo = async ($: any) => (await $.ui.mount({ ...FAIXA, surface: 'terminal' }).then(async (ui: any) => {
+  const b = await ui.find({ type: 'Button', key: 'auto' })
+  await ui.unmount()
+  return b?.props.label as string | undefined
+}))
+
+test('config button:false hides the fixed button from the start; /relay button shows it for the session; absent or true shows it', async ($, on) => {
   const tokens = { v: 30_000 }
   const env = { SYNCLABS_RELAY_LANG: 'en', SYNCLABS_RELAY_CONFIG: 'C:/cfg/config.json' }
-  let cfg = '{"threshold_tokens":100000}'
-  const mem = new Map<string, unknown>()
-  await cfgScene($, on, env, () => cfg, tokens, mem)
-  await $.command.run({ command: 'handoff', args: 'threshold 60k' } as never)
-  expect(mem.get('limiar')).toBe(60_000)
-  await $.command.run({ command: 'handoff', args: 'threshold default' } as never)
-  expect(mem.has('limiar')).toBe(false)
-  cfg = '{"threshold_tokens":200000}'
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true }) // next session reads store -> config
-  tokens.v = 30_000
+  await cfgScene($, on, env, '{"button":false,"threshold_tokens":100000}', tokens, new Map([['apresentado', true]]))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.turn.complete(TURNO)
-  tokens.v = 180_000 // +150k: above 100k but below 200k
+  expect(await rotuloFixo($)).toBeUndefined()
+  const r = (await $.command.run({ command: 'relay', args: 'button' } as never)) as any
+  expect(r.text).toBe('Button visible.')
+  expect(await rotuloFixo($)).toBe(FIXO)
+  await $.command.run({ command: 'relay', args: 'button' } as never)
+  expect(await rotuloFixo($)).toBeUndefined()
+})
+
+test('config without the button key (or button:true) shows the fixed button', async ($, on) => {
+  const tokens = { v: 30_000 }
+  const env = { SYNCLABS_RELAY_LANG: 'en', SYNCLABS_RELAY_CONFIG: 'C:/cfg/config.json' }
+  await cfgScene($, on, env, '{"button":true}', tokens, new Map([['apresentado', true]]))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.turn.complete(TURNO)
+  expect(await rotuloFixo($)).toBe(FIXO)
+})
+
+test('model from the API: a 200K model switches at floor + 136k (166k), not 180k', async ($, on) => {
+  const tokens = { v: 30_000 }
+  await cfgScene($, on, { SYNCLABS_RELAY_LANG: 'en' }, null, tokens, undefined, { modelo: 'claude-sonnet-4-6', janela: 200_000 })
+  tokens.v = 165_000
+  await $.turn.complete(TURNO)
+  expect(await botaoTrocar($)).toBeUndefined()
+  tokens.v = 166_000
+  await $.turn.complete(TURNO)
+  expect(await botaoTrocar($)).toBe('Switch session')
+})
+
+test('model from the API: a 1M model switches at 180k; threshold_tokens 300000 on a 200K model still stops at 166k', async ($, on) => {
+  const tokens = { v: 30_000 }
+  await cfgScene($, on, { SYNCLABS_RELAY_LANG: 'en' }, null, tokens, undefined, { modelo: 'claude-opus-4-7', janela: 1_000_000 })
+  tokens.v = 179_000
+  await $.turn.complete(TURNO)
+  expect(await botaoTrocar($)).toBeUndefined()
+  tokens.v = 180_000
+  await $.turn.complete(TURNO)
+  expect(await botaoTrocar($)).toBe('Switch session')
+})
+
+test('threshold_tokens 300000 with a 200K model: the ceiling applies', async ($, on) => {
+  const tokens = { v: 30_000 }
+  const env = { SYNCLABS_RELAY_LANG: 'en', SYNCLABS_RELAY_CONFIG: 'C:/cfg/config.json' }
+  await cfgScene($, on, env, '{"threshold_tokens":300000}', tokens, undefined, { modelo: 'claude-sonnet-4-6', janela: 200_000 })
+  tokens.v = 165_000
+  await $.turn.complete(TURNO)
+  expect(await botaoTrocar($)).toBeUndefined()
+  tokens.v = 166_000
+  await $.turn.complete(TURNO)
+  expect(await botaoTrocar($)).toBe('Switch session')
+})
+
+test('env CLAUDE_CODE_AUTO_COMPACT_WINDOW, settings autoCompactWindow and the pct override move the compaction point', async ($, on) => {
+  const tokens = { v: 30_000 }
+  const env: Record<string, string> = { SYNCLABS_RELAY_LANG: 'en', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '150000' }
+  await cfgScene($, on, env, null, tokens, undefined, { modelo: 'claude-opus-4-7' })
+  tokens.v = 125_000 // floor 30k + 0.8 x 120k = 126k
+  await $.turn.complete(TURNO)
+  expect(await botaoTrocar($)).toBeUndefined()
+  tokens.v = 126_000
+  await $.turn.complete(TURNO)
+  expect(await botaoTrocar($)).toBe('Switch session')
+})
+
+test('settings.json of CLAUDE_CONFIG_DIR: autoCompactWindow read; broken file ignored', async ($, on) => {
+  const tokens = { v: 30_000 }
+  const env: Record<string, string> = { SYNCLABS_RELAY_LANG: 'en', CLAUDE_CONFIG_DIR: 'D:/cc' }
+  const c = await cfgScene($, on, env, null, tokens, undefined, { modelo: 'claude-opus-4-7', settings: '{"autoCompactWindow":150000}' })
+  tokens.v = 126_000
+  await $.turn.complete(TURNO)
+  expect(new Set(c.cfgLidos)).toEqual(new Set(['D:/cc/settings.json']))
+  expect(await botaoTrocar($)).toBe('Switch session')
+})
+
+test('settings.json broken: ignored, the model default applies', async ($, on) => {
+  const tokens = { v: 30_000 }
+  await cfgScene($, on, { SYNCLABS_RELAY_LANG: 'en' }, null, tokens, undefined, { modelo: 'claude-opus-4-7', settings: '{broken' })
+  tokens.v = 126_000
   await $.turn.complete(TURNO)
   expect(await botaoTrocar($)).toBeUndefined()
 })

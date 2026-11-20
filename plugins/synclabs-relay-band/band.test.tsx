@@ -1286,10 +1286,10 @@ test('regra 1: botao Auto na faixa mostra e alterna', async ($, on) => {
   await auto($, on, { ligado: false })
   await turno($)
   const ui = await $.ui.mount({ ...FAIXA, surface: 'terminal' })
-  expect((await ui.find({ type: 'Button', key: 'auto' }))?.props.label).toBe('Passagem auto: desligado')
+  expect((await ui.find({ type: 'Button', key: 'auto' }))?.props.label).toBe('Sync_Relay auto: desligado')
   await ui.press({ key: 'auto' })
   expect(await contando($)).toBe(false) // ligar nao dispara no meio; so no proximo fim de turno
-  expect((await ui.find({ type: 'Button', key: 'auto' }))?.props.label).toBe('Passagem auto: ligado')
+  expect((await ui.find({ type: 'Button', key: 'auto' }))?.props.label).toBe('Sync_Relay auto: ligado')
   await ui.unmount()
 })
 
@@ -2285,13 +2285,13 @@ test('botao Auto fixo: sem faixa aparece, alterna o store e o rotulo', async ($,
   await turno($)
   expect(await botao($, 'trocar')).toBe(false)
   const ui = await $.ui.mount({ ...FAIXA, surface: 'terminal' })
-  expect((await ui.find({ type: 'Button', key: 'auto' }))?.props.label).toBe('Passagem auto: desligado')
+  expect((await ui.find({ type: 'Button', key: 'auto' }))?.props.label).toBe('Sync_Relay auto: desligado')
   await ui.press({ key: 'auto' })
   expect(c.mem.get('auto')).toBe(true)
-  expect((await ui.find({ type: 'Button', key: 'auto' }))?.props.label).toBe('Passagem auto: ligado')
+  expect((await ui.find({ type: 'Button', key: 'auto' }))?.props.label).toBe('Sync_Relay auto: ligado')
   await ui.press({ key: 'auto' })
   expect(c.mem.get('auto')).toBe(false)
-  expect((await ui.find({ type: 'Button', key: 'auto' }))?.props.label).toBe('Passagem auto: desligado')
+  expect((await ui.find({ type: 'Button', key: 'auto' }))?.props.label).toBe('Sync_Relay auto: desligado')
   await ui.unmount()
 })
 
@@ -2341,7 +2341,7 @@ test('apresentacao: Ligar automatico liga o auto, grava a marca e esconde a apre
   expect(c.mem.get('auto')).toBe(true)
   expect(c.mem.get('apresentado')).toBe(true)
   expect(await apresentacao($)).toBe(false)
-  expect((await olhar($, { type: 'Button', key: 'auto' }))?.props.label).toBe('Passagem auto: ligado')
+  expect((await olhar($, { type: 'Button', key: 'auto' }))?.props.label).toBe('Sync_Relay auto: ligado')
 })
 
 test('apresentacao: Entendi mantem o auto desligado, grava a marca e esconde a apresentacao', async ($, on) => {
@@ -2350,7 +2350,7 @@ test('apresentacao: Entendi mantem o auto desligado, grava a marca e esconde a a
   expect(c.mem.has('auto')).toBe(false)
   expect(c.mem.get('apresentado')).toBe(true)
   expect(await apresentacao($)).toBe(false)
-  expect((await olhar($, { type: 'Button', key: 'auto' }))?.props.label).toBe('Passagem auto: desligado')
+  expect((await olhar($, { type: 'Button', key: 'auto' }))?.props.label).toBe('Sync_Relay auto: desligado')
 })
 
 test('apresentacao: com a marca apresentado aparece o botao fixo', async ($, on) => {
@@ -2524,7 +2524,7 @@ test('duas linhas (passagem e other-mod): um botao de auto em cada, e o da passa
   // O kit acha os dois pela key, sem dizer de quem e: como na tela, so o rotulo os separa.
   const todos = await ui.findAll({ type: 'Button', key: 'auto' })
   await ui.unmount()
-  expect(todos.map((b: any) => b.props.label).sort()).toEqual(['Auto: desligado', 'Passagem auto: desligado'])
+  expect(todos.map((b: any) => b.props.label).sort()).toEqual(['Auto: desligado', 'Sync_Relay auto: desligado'])
 })
 
 // 0.6.7: no motor real o auto mudou sem rastro de quem mudou; toda troca do auto fica no rastro, com a origem.
@@ -2621,7 +2621,7 @@ test('sem env: nada muda (grava no store, sem rastro de sobrescrita)', async ($,
   expect(rastroTudo(c)).not.toMatch(/sobrescrita/)
 })
 
-// /relay button esconde e mostra o botao fixo "Passagem auto" so nesta sessao; o padrao inicial vem da chave `button` do config.json.
+// /relay button esconde e mostra o botao fixo "Sync_Relay auto" e lembra no store; o config.json so define o comeco.
 const botaoCmd = ($: any) => $.command.run({ command: 'relay', args: 'button' } as never)
 const semFaixa = async ($: any, on: any, o: object = {}) => {
   const c = await auto($, on, o)
@@ -2636,7 +2636,7 @@ test('botao: sem config o botao fixo aparece (padrao visivel)', async ($, on) =>
   expect(await botao($, 'auto')).toBe(true)
 })
 
-test('botao: /relay button esconde e avisa; de novo mostra e avisa; nada vai ao store', async ($, on) => {
+test('botao: /relay button esconde e avisa; de novo mostra e avisa; a escolha vai ao store', async ($, on) => {
   const c = await semFaixa($, on)
   const r = await botaoCmd($)
   expect(c.toasts).toContain('Botão oculto. Para mostrar de novo: /relay button.')
@@ -2645,7 +2645,7 @@ test('botao: /relay button esconde e avisa; de novo mostra e avisa; nada vai ao 
   await botaoCmd($)
   expect(c.toasts).toContain('Botão visível.')
   expect(await botao($, 'auto')).toBe(true)
-  expect(c.mem.has('botao')).toBe(false)
+  expect(c.mem.get('botao')).toBe(true)
 })
 
 test('botao: oculto por comando vale o resto da sessao, inclusive depois do /clear', async ($, on) => {
@@ -2718,7 +2718,7 @@ test('/clear real: logo depois, a sessao nova carrega store e env sem esperar tu
   await clearReal($, c)
   await c.relogio.advance(1_000)
   expect(await apresentacao($)).toBe(false)
-  expect(await rotuloAuto($)).toBe('Passagem auto: ligado')
+  expect(await rotuloAuto($)).toBe('Sync_Relay auto: ligado')
   expect(s.ultimo()).toBe('Sync_Relay · auto ligado · medindo')
   c.tokens.v = 30_000
   await turno($, { turnId: 'n1' })
@@ -2731,7 +2731,7 @@ test('/clear real sem env: auto ligado no store segue ligado e a apresentacao vi
   await clearReal($, c)
   await c.relogio.advance(1_000)
   expect(await apresentacao($)).toBe(false)
-  expect(await rotuloAuto($)).toBe('Passagem auto: ligado')
+  expect(await rotuloAuto($)).toBe('Sync_Relay auto: ligado')
   await apertar($, 'auto') // desliga de verdade (partia do estado certo)
   expect(c.mem.get('auto')).toBe(false)
 })
@@ -2786,11 +2786,11 @@ test('store ilegivel e depois legivel: o proximo turno le o estado de novo', asy
   await clearReal($, c)
   c.storeFalha.v = true
   await c.relogio.advance(1_000)
-  expect(await rotuloAuto($)).toBe('Passagem auto: desligado') // padrao
+  expect(await rotuloAuto($)).toBe('Sync_Relay auto: desligado') // padrao
   c.storeFalha.v = false
   c.tokens.v = 30_000
   await turno($, { turnId: 'n1' })
-  expect(await rotuloAuto($)).toBe('Passagem auto: ligado') // do store
+  expect(await rotuloAuto($)).toBe('Sync_Relay auto: ligado') // do store
 })
 
 // 0.6.11 D2: /reload-plugins numa sessao aberta (carregado nasce false, modulo com interativo=false, sem session.start)
@@ -2840,7 +2840,7 @@ test('0.6.12 Cancelar na contagem para a troca, grava auto=false, adia 50k, avis
   expect(c.toasts).toContain(CANCELADA)
   await c.relogio.advance(60_000)
   expect(c.enviados).toEqual([])
-  expect((await olhar($, { type: 'Button', key: 'auto' }))?.props.label).toBe('Passagem auto: desligado')
+  expect((await olhar($, { type: 'Button', key: 'auto' }))?.props.label).toBe('Sync_Relay auto: desligado')
   await dormir(80)
   expect(rastroTudo(c)).toMatch(/auto ligado -> desligado \(botao\)/)
   expect(rastroTudo(c)).toMatch(/cancelou a contagem/)
@@ -3121,7 +3121,7 @@ test('config handoff_dir (absolute) is where the band looks for the file', async
   for (const p of perguntados) expect(p.startsWith('D:/data/handoffs/c-users-x-p-')).toBe(true)
 })
 
-const FIXO = 'Auto handoff: off'
+const FIXO = 'Sync_Relay auto: off'
 const rotuloFixo = async ($: any) => (await $.ui.mount({ ...FAIXA, surface: 'terminal' }).then(async (ui: any) => {
   const b = await ui.find({ type: 'Button', key: 'auto' })
   await ui.unmount()
@@ -3149,6 +3149,79 @@ test('config without the button key (or button:true) shows the fixed button', as
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.turn.complete(TURNO)
   expect(await rotuloFixo($)).toBe(FIXO)
+})
+
+// Precedence of the remembered choices: session env > value saved in $.store by the command > config.json > default.
+const lembrar = async ($: any, on: any, cfg: string | null, mem: Map<string, unknown>, extraEnv: Record<string, string> = {}) => {
+  const env = { SYNCLABS_RELAY_LANG: 'en', SYNCLABS_RELAY_CONFIG: 'C:/cfg/config.json', ...extraEnv }
+  mem.set('apresentado', true)
+  await cfgScene($, on, env, cfg, { v: 30_000 }, mem)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.turn.complete(TURNO)
+}
+const ON = 'Sync_Relay auto: on'
+const OFF = 'Sync_Relay auto: off'
+
+test('remembered: /relay button hides the button and a NEW session (same store) keeps it hidden', async ($, on) => {
+  const mem = new Map<string, unknown>()
+  await lembrar($, on, null, mem)
+  expect(await rotuloFixo($)).toBe(OFF)
+  await $.command.run({ command: 'relay', args: 'button' } as never)
+  expect(await rotuloFixo($)).toBeUndefined()
+  expect(mem.get('botao')).toBe(false)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.turn.complete(TURNO)
+  expect(await rotuloFixo($)).toBeUndefined()
+})
+
+test('remembered: config button:false with nothing in the store hides the button; store absent, config decides', async ($, on) => {
+  const mem = new Map<string, unknown>()
+  await lembrar($, on, '{"button":false}', mem)
+  expect(await rotuloFixo($)).toBeUndefined()
+  expect(mem.has('botao')).toBe(false)
+})
+
+test('remembered: store botao:true beats config button:false', async ($, on) => {
+  await lembrar($, on, '{"button":false}', new Map<string, unknown>([['botao', true]]))
+  expect(await rotuloFixo($)).toBe(OFF)
+})
+
+test('remembered: store botao:false beats config button:true', async ($, on) => {
+  await lembrar($, on, '{"button":true}', new Map<string, unknown>([['botao', false]]))
+  expect(await rotuloFixo($)).toBeUndefined()
+})
+
+test('remembered: config auto:true with an empty store starts auto on; no key = off', async ($, on) => {
+  await lembrar($, on, '{"auto":true}', new Map())
+  expect(await rotuloFixo($)).toBe(ON)
+})
+
+test('remembered: store auto:false beats config auto:true; store auto:true beats config auto:false', async ($, on) => {
+  await lembrar($, on, '{"auto":true}', new Map<string, unknown>([['auto', false]]))
+  expect(await rotuloFixo($)).toBe(OFF)
+})
+
+test('remembered: store auto:true beats config auto:false', async ($, on) => {
+  await lembrar($, on, '{"auto":false}', new Map<string, unknown>([['auto', true]]))
+  expect(await rotuloFixo($)).toBe(ON)
+})
+
+test('remembered: /relay auto is saved and a NEW session keeps it', async ($, on) => {
+  const mem = new Map<string, unknown>()
+  await lembrar($, on, '{"auto":false}', mem)
+  await $.command.run({ command: 'relay', args: 'auto' } as never)
+  expect(mem.get('auto')).toBe(true)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.turn.complete(TURNO)
+  expect(await rotuloFixo($)).toBe(ON)
+})
+
+test('remembered: session env SYNCLABS_RELAY_BAND_AUTO beats the store', async ($, on) => {
+  const mem = new Map<string, unknown>([['auto', true]])
+  await lembrar($, on, null, mem, { SYNCLABS_RELAY_BAND_AUTO: '0' })
+  expect(await rotuloFixo($)).toBe(OFF)
+  await $.command.run({ command: 'relay', args: 'auto' } as never) // session only: the store stays
+  expect(mem.get('auto')).toBe(true)
 })
 
 test('model from the API: a 200K model switches at floor + 136k (166k), not 180k', async ($, on) => {

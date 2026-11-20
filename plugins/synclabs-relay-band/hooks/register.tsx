@@ -12,8 +12,8 @@ const fase = atom({ plugin: 'synclabs-relay-band', key: 'fase' } as const, 'ocio
 const auto = atom({ plugin: 'synclabs-relay-band', key: 'auto' } as const, false)
 // Apresentacao unica da primeira instalacao: vista (persiste em $.store, chave 'apresentado'). O padrao do auto e desligado.
 const apresentado = atom({ plugin: 'synclabs-relay-band', key: 'apresentado' } as const, false)
-// Botao fixo "Passagem auto" acima do campo (sem faixa): o padrao vem da chave `button` do config.json (true se faltar);
-// /relay button alterna so a sessao (nada no store).
+// Botao fixo "Sync_Relay auto" acima do campo (sem faixa): /relay button grava no $.store (chave 'botao') e vale em todas as
+// sessoes; sem nada no store vale a chave `button` do config.json (true se faltar).
 const botaoFixo = atom({ plugin: 'synclabs-relay-band', key: 'botao' } as const, true)
 // ponto de auto-compactacao da CLI (C) e de onde veio; medido a cada turno (modelo, env e settings podem mudar).
 const compact = atom({ plugin: 'synclabs-relay-band', key: 'compact' } as const, null)
@@ -200,7 +200,7 @@ export function resolveLang(envLang: string | undefined, cfgLang: string | undef
   return langConhecido(envLang) ?? langConhecido(cfgLang) ?? (locale.toLowerCase().startsWith('pt') ? 'pt-BR' : 'en')
 }
 
-type Config = { lang?: string; threshold?: number; dir?: string; mode?: string; button?: boolean }
+type Config = { lang?: string; threshold?: number; dir?: string; mode?: string; button?: boolean; auto?: boolean }
 const MODOS = ['enforce', 'remind', 'off']
 
 /**
@@ -227,6 +227,7 @@ export function parseConfig(txt: string, windows = false, home: string | null = 
     if (typeof o.lang === 'string') c.lang = o.lang
     if (typeof o.mode === 'string' && MODOS.includes(o.mode)) c.mode = o.mode
     if (typeof o.button === 'boolean') c.button = o.button
+    if (typeof o.auto === 'boolean') c.auto = o.auto
     if (Number.isInteger(o.threshold_tokens) && o.threshold_tokens >= LIMIAR_MIN && o.threshold_tokens <= LIMIAR_MAX) c.threshold = o.threshold_tokens
     // an absolute path only: a relative one would write into whatever the cwd is (rule in pastaConfigurada)
     const dir = typeof o.handoff_dir === 'string' ? pastaConfigurada(o.handoff_dir, windows, home) : undefined
@@ -377,8 +378,8 @@ const MSG = {
     gotIt: 'Got it',
     turnAutoOff: 'Turn auto off',
     turnAutoOn: 'Turn auto on',
-    autoButtonOn: 'Auto handoff: on',
-    autoButtonOff: 'Auto handoff: off',
+    autoButtonOn: 'Sync_Relay auto: on',
+    autoButtonOff: 'Sync_Relay auto: off',
     banner: 'Context at {0}k tokens (+{1}k above the start of the session): past the switch point.',
     switchSession: 'Switch session',
     later: 'Later',
@@ -436,8 +437,8 @@ const MSG = {
     gotIt: 'Entendi',
     turnAutoOff: 'Desligar automático',
     turnAutoOn: 'Ligar automático',
-    autoButtonOn: 'Passagem auto: ligado',
-    autoButtonOff: 'Passagem auto: desligado',
+    autoButtonOn: 'Sync_Relay auto: ligado',
+    autoButtonOff: 'Sync_Relay auto: desligado',
     banner: 'Contexto em {0}k tokens (+{1}k acima do início da sessão): passou do ponto de troca.',
     switchSession: 'Trocar de sessão',
     later: 'Depois',
@@ -554,9 +555,8 @@ const kt = (v: number): string => `${+(v / 1000).toFixed(1)}k`
 // valor valido, auto e limiar valem no modulo (sobrevive ao /clear, mesmo processo) e NADA disso vai ao $.store, que e de todas
 // as sessoes. Comando e botao mudam so este objeto.
 let sobre: { auto?: boolean; limiar?: number } | null = null
-// /relay button desta sessao (null: vale o config.json); sobrevive ao /clear, some com o processo.
-let botaoSessao: boolean | null = null
-const soSessao = (): string => (sobre ? tx('thisSession') : '')
+// Aviso "so nesta sessao": so quando o env fixou o auto (o limiar sozinho nao impede o auto de ir ao store).
+const soSessao = (): string => (sobre?.auto !== undefined ? tx('thisSession') : '')
 
 async function lerSobrescrita($: Engine): Promise<void> {
   const [l, a] = await Promise.all([$.env.get('SYNCLABS_RELAY_BAND_THRESHOLD'), $.env.get('SYNCLABS_RELAY_BAND_AUTO')])
@@ -881,7 +881,7 @@ async function iniciarContagem($: Engine): Promise<void> {
 /** Grava o auto no atomo e no store (com a sobrescrita SYNCLABS_RELAY_BAND_*, so na sessao). */
 async function guardarAuto($: Engine, valor: boolean): Promise<void> {
   await update($, auto, () => valor)
-  if (sobre) sobre.auto = valor
+  if (sobre?.auto !== undefined) sobre.auto = valor
   else await $.store.set('auto', valor)
 }
 
@@ -897,11 +897,11 @@ async function alternarAuto($: Engine, origem: string): Promise<boolean> {
   return novo
 }
 
-/** Esconde ou mostra o botao fixo so nesta sessao (o padrao inicial e a chave `button` do config.json). */
+/** Esconde ou mostra o botao fixo e lembra a escolha no store (vale em todas as sessoes; o config.json so define o comeco). */
 async function alternarBotao($: Engine, origem: string): Promise<string> {
   const novo = !(await read($, botaoFixo))
   await update($, botaoFixo, () => novo)
-  botaoSessao = novo
+  await $.store.set('botao', novo)
   rastro($, `botao ${novo ? 'oculto -> visivel' : 'visivel -> oculto'} (${origem})`)
   const msg = novo ? tx('buttonShown') : tx('buttonHidden')
   $.ui.toast(msg)
@@ -1016,14 +1016,19 @@ async function iniciar($: Engine, via: Via, ehInterativo = interativoModulo): Pr
   const ligadoInterativo = via === 'session.start' ? ehInterativo : (await read($, interativo)) || interativoModulo
   interativoModulo = ligadoInterativo
   await update($, interativo, () => ligadoInterativo)
-  const guardado = sobre?.auto ?? (await lerStore('auto')) === true
+  // Language, threshold (D), auto and the button: env (auto) > value the command saved in the store > config.json > default.
+  const amb = await ambiente($).catch((): Ambiente | null => null)
+  const doStore = async (k: string): Promise<boolean | undefined> => {
+    const v = await lerStore(k)
+    return typeof v === 'boolean' ? v : undefined
+  }
+  const guardado = sobre?.auto ?? (await doStore('auto')) ?? amb?.config.auto ?? false
   await update($, auto, () => guardado)
   // Store ilegivel: sem apresentacao de primeira instalacao (ela gravaria no store que nao responde).
   const visto = (await lerStore('apresentado')) === true || falha !== null
   await update($, apresentado, () => visto)
-  // Language, threshold (D) and the button's initial state come from the env and the config file; /relay button wins for the session.
-  const amb = await ambiente($).catch((): Ambiente | null => null)
-  await update($, botaoFixo, () => botaoSessao ?? amb?.config.button ?? true)
+  const botaoGuardado = (await doStore('botao')) ?? amb?.config.button ?? true
+  await update($, botaoFixo, () => botaoGuardado)
   lang = resolveLang(amb?.env.SYNCLABS_RELAY_LANG, amb?.config.lang, Intl.DateTimeFormat().resolvedOptions().locale)
   const limite = sobre?.limiar ?? amb?.config.threshold ?? LIMIAR_ACIMA
   await update($, limiar, () => limite)
@@ -1064,7 +1069,6 @@ function recarregar($: Engine, antigo: string, tentativa = 0): void {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     avisouSemPasta = false
-    botaoSessao = null
     await lerSobrescrita($)
     await iniciar($, 'session.start', e.isInteractive)
     await $.command.register({ name: 'relay', description: tx('cmdDescription') })

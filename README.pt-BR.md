@@ -97,9 +97,11 @@ A tabela também pede aos subagentes um relatório curto. Quando o relatório fi
 ### Passagem
 
 1. Digite `handoff` ou `passagem` (com ou sem `/` na frente) no prompt.
-2. O gancho manda o modelo esperar até não haver agente rodando e então gravar o estado num arquivo Markdown de até 8.000 caracteres, no seu idioma: seu pedido, estado, decisões, onde está cada coisa, próximos passos numerados, riscos. No Claude Code o modelo grava sozinho, e o núcleo pré-aprova esse único `Write` (veja Permissão da gravação da passagem, abaixo). No Codex ele delega a gravação a um subagente que herda o contexto.
+2. O gancho manda o modelo gravar o estado num arquivo Markdown de até 8.000 caracteres, no seu idioma: seu pedido, estado, decisões, onde está cada coisa, o que não passa sozinho, próximos passos numerados, riscos. Se um subagente ainda estiver rodando, o modelo avisa e grava o arquivo quando o subagente terminar. No Claude Code o modelo grava sozinho, e o núcleo pré-aprova esse único `Write` (veja Permissão da gravação da passagem, abaixo). No Codex ele delega a gravação a um subagente que herda o contexto.
 3. O modelo responde `passagem pronta` (em inglês, `handoff ready`). Abra a sessão nova: `/clear` no Claude Code, `/new` no Codex.
 4. O gancho `SessionStart` da sessão nova coloca o arquivo no contexto dela.
+
+O que o `/clear` faz com o trabalho em andamento, medido em `claude -p` (Claude Code 2.1.329): uma `/goal` ativa é apagada; agendamentos (`CronCreate`, `/loop`) ficam e disparam na sessão nova; agentes e comandos em segundo plano continuam rodando, e os avisos deles chegam à sessão nova, que não os iniciou. Por isso o arquivo leva a condição da meta palavra por palavra (você a define de novo com `/goal`), cada agendamento (id, horário, prompt, para a sessão nova não criá-lo duas vezes) e cada agente ou comando em segundo plano ainda rodando (id, o que faz, arquivo de saída).
 
 O núcleo é a única parte que entrega a passagem, nos dois CLIs. Qual arquivo cada sessão pega:
 
@@ -107,7 +109,7 @@ O núcleo é a única parte que entrega a passagem, nos dois CLIs. Qual arquivo 
 - Claude Code depois do `/clear`, sem `CLAUDE_PID`: o único `<slug>-<8hex>.md` do diretório com menos de 30 minutos. Com dois ou mais, não entrega.
 - Janela nova do Claude Code: só uma passagem do Codex para o mesmo diretório.
 - Codex: a passagem mais nova do mesmo diretório, inclusive as gravadas pelo Claude Code (veja Limites conhecidos).
-- Passagem com mais de 30 minutos é ignorada. Cada arquivo é pego uma vez. Se der erro depois que uma sessão pegou o arquivo e antes de o texto ser impresso, o arquivo é renomeado de volta, então não se perde.
+- Passagem com mais de 30 minutos é ignorada. Cada arquivo é pego uma vez. Se der erro depois que uma sessão pegou o arquivo e antes de o texto ser impresso, o arquivo é renomeado de volta e, no Claude Code, o marcador `_req-<PID>.txt` volta como estava, então o próximo `/clear` ainda o pega.
 - Texto acima de 9.000 caracteres é cortado, com um aviso e o caminho do arquivo. O Claude Code transforma contexto de gancho acima de 10.000 caracteres em caminho e uma prévia curta, então o contexto inteiro fica abaixo de 9.000 caracteres. A passagem entra primeiro e nunca é cortada por causa de outra coisa. A tabela de roteamento fica com o que sobrar: se não couber, é cortada e termina com uma linha de aviso, e se não houver espaço nem para o aviso, fica de fora.
 
 Onde ficam os arquivos, por padrão:
@@ -131,7 +133,7 @@ Vale em qualquer modo, inclusive `off`. Suas regras `deny` e `ask` continuam val
 
 ### Aviso de contexto
 
-No fim de um turno (`Stop`), se o contexto cresceu `threshold_tokens` (150.000 por padrão) além de onde a sessão começou, uma mensagem diz para digitar `handoff`. A conta é o crescimento desde o começo da própria sessão, não o tamanho absoluto. No Claude Code o plugin soma os tokens de entrada, de criação de cache e de leitura de cache da última resposta da sessão principal. No Codex usa a última contagem de tokens do rollout. Se a faixa estiver instalada, ponha `stop_warning` em `false` no Claude Code, porque a faixa mostra o próprio aviso.
+No fim de um turno (`Stop`), se o contexto cresceu `threshold_tokens` (150.000 por padrão) além de onde a sessão começou, uma mensagem diz para digitar `handoff`. A conta é o crescimento desde o começo da própria sessão, não o tamanho absoluto. No Claude Code o plugin soma os tokens de entrada, de criação de cache e de leitura de cache da última resposta da sessão principal. No Codex usa a última contagem de tokens do rollout. No Claude Code o aviso espera enquanto um subagente está rodando (o campo `background_tasks` da entrada do `Stop`) e vem no fim do turno que traz o relatório dele; um comando de shell em segundo plano não o segura, porque um servidor pode nunca terminar. Se a faixa estiver instalada, ponha `stop_warning` em `false` no Claude Code, porque a faixa mostra o próprio aviso.
 
 As medições por trás dos 150.000 estão na próxima seção.
 
@@ -190,7 +192,7 @@ Salvo em `C:\Users\alice\AppData\Roaming\synclabs-relay\config.json` no Windows 
 Instale o `synclabs-relay-band` e, quando o limite é atingido, aparece uma faixa com o botão Trocar de sessão. A troca espera a sessão principal ficar livre e nenhum agente estar rodando, pede a passagem e então roda `/clear`. A sessão nova recebe a passagem do núcleo. Ao terminar, a faixa mostra "Passagem gravada; sessão nova aberta." Ela não afirma que a passagem foi entregue: quem entrega é o núcleo, e só se os arquivos baterem (veja Passagem). Cancelar retira o pedido: a faixa esvazia o marcador, então nada é entregue por PID.
 
 - `/handoff`: troca agora.
-- `/handoff auto`: liga ou desliga o modo automático. Desligado por padrão. Ligado, troca sozinho depois de uma contagem de 15 s que você pode cancelar.
+- `/handoff auto`: liga ou desliga o modo automático. Desligado por padrão. Ligado, troca sozinho depois de uma contagem de 15 s que você pode cancelar. A contagem não começa enquanto houver agente pendente ou rodando; a faixa continua aparecendo. A API de mods só lista agentes, então a faixa não vê comandos de shell em segundo plano, agendamentos nem a meta: o arquivo da passagem leva isso.
 - `/handoff botao` (ou `button`): esconde ou mostra o botão acima do campo.
 - `/handoff limiar [Nk|padrao]` (ou `threshold [Nk|default]`): mostra ou muda o limite.
 

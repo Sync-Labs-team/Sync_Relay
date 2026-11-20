@@ -8,7 +8,7 @@ The main interactive session only orchestrates; work goes to subagents. Standard
 - SessionStart: routing table (from config) for the main session; delivers a pending handoff to a new session
   (`startup`/`clear`), the only one that does in both CLIs (the band mod only triggers the switch); deletes handoff
   files older than 7 days.
-- Stop: warns when the context grew `threshold_tokens` above the floor of the session itself.
+- Stop: warns when the context grew `threshold_tokens` above the floor of the session itself (not while a subagent runs).
 - SubagentStop: asks once for a shorter report when it passes `report_max_chars`.
 
 Config: see README (file `synclabs-relay/config.json`; env SYNCLABS_RELAY_MODE / _LANG / _CONFIG win over it).
@@ -491,7 +491,7 @@ def marcador(pasta, env):
 
 
 def handoff_pendente(d, cli, pasta, env):
-    """(text, used-file) of the handoff this new session takes, already claimed, or None.
+    """(text, used-file, file, marker) of the handoff this new session takes, already claimed, or None.
     Claude /clear: the file this same process asked for, else the Codex one of the cwd (<slug>.md). Claude startup:
     the Codex one. Codex: the newest of the cwd, Claude's per-session files included (switching CLI).
     The claim is an atomic rename BEFORE anything is printed: two sessions starting together never get the same one."""
@@ -501,10 +501,12 @@ def handoff_pendente(d, cli, pasta, env):
     proprio = None
     clear_claude = cli == "claude" and d.get("source") == "clear"
     m = marcador(pasta, env) if clear_claude else None
+    marca = None  # (marker, content, mtime_ns): given back with the file, or the next /clear finds no request
     if m:  # an empty marker = the band canceled the switch: nothing is delivered by PID
         try:
             with open(m, encoding="utf-8") as f:
                 proprio = f.read().strip()
+            marca = (m, proprio, os.stat(m).st_mtime_ns)
             os.remove(m)
         except OSError:
             pass
@@ -539,20 +541,28 @@ def handoff_pendente(d, cli, pasta, env):
             continue
         try:
             with open(usada, encoding="utf-8", errors="replace") as f:
-                return f.read(), usada, arq
+                return f.read(), usada, arq, marca
         except OSError:
-            desfazer(usada, arq)
+            desfazer(usada, arq, marca)
             return None
     return None
 
 
-def desfazer(usada, arq):
-    """Gives a claimed handoff back (it was not delivered). Never overwrites a newer one with the same name."""
+def desfazer(usada, arq, marca=None):
+    """Gives a claimed handoff back (it was not delivered), and the marker that named it, with its age, so the next
+    /clear of this process still finds it. Never overwrites a newer handoff or marker."""
     try:
         if not os.path.lexists(arq):
             os.rename(usada, arq)
     except OSError:
         pass
+    if marca:
+        try:
+            with open(marca[0], "x", encoding="utf-8") as f:
+                f.write(marca[1])
+            os.utime(marca[0], ns=(marca[2], marca[2]))
+        except OSError:
+            pass
 
 
 def _u16(texto):
@@ -575,7 +585,7 @@ def contexto(evento, texto):
 
 
 def processar(d, cli, env, home, nt):
-    """(hook output or None, (used-file, file) to give back if the output cannot be written, or None)."""
+    """(hook output or None, (used-file, file, marker) to give back if the output cannot be written, or None)."""
     evento = d.get("hook_event_name")
     if evento not in EVENTOS:
         return None, None
@@ -632,7 +642,7 @@ def processar(d, cli, env, home, nt):
         tab = tabela(cfg, t, cli) if lembra else ""
         pend, mover, bloco = handoff_pendente(d, cli, pasta, env), None, ""
         if pend:  # the handoff first: it is never cut for the table (over 10k Claude Code delivers a path and a preview)
-            texto, usada, arq = pend
+            texto, usada, arq, marca = pend
             try:
                 cab = t("handoff_injected", file=usada)
                 fim = t("handoff_cut", file=usada)
@@ -641,9 +651,9 @@ def processar(d, cli, env, home, nt):
                     texto = _cortar(texto, resto - _u16(fim)) + fim
                 bloco = cab + texto
             except Exception:  # claimed but nothing will be printed: give it back, fail open
-                desfazer(usada, arq)
+                desfazer(usada, arq, marca)
                 return None, None
-            mover = (usada, arq)
+            mover = (usada, arq, marca)
         sobra = LIMITE_CONTEXTO - _u16(bloco) - (2 if bloco else 0)  # the routing table gets what is left
         if _u16(tab) > sobra:
             corte = t("routing_cut")
@@ -651,7 +661,11 @@ def processar(d, cli, env, home, nt):
             tab = (_cortar(tab, n).rpartition("\n")[0] + "\n" + corte).lstrip("\n") if n >= 0 else ""
         partes = [x for x in (tab, bloco) if x]
         return _com_aviso(contexto(evento, "\n\n".join(partes)) if partes else None, aviso), mover
-    if evento == "Stop" and not d.get("stop_hook_active") and (cli != "claude" or cfg["stop_warning"]):
+    # a subagent still running (Claude Stop input `background_tasks`): its report would land in the new session out of
+    # context, so warn at the turn that brings it; shells never hold the warning (a server may never end)
+    tarefas = d.get("background_tasks") if isinstance(d.get("background_tasks"), list) else []
+    sub_vivo = any(isinstance(x, dict) and x.get("type") == "subagent" for x in tarefas)
+    if evento == "Stop" and not d.get("stop_hook_active") and not sub_vivo and (cli != "claude" or cfg["stop_warning"]):
         n, piso = tokens_e_piso(d.get("transcript_path"), cli)
         if n and piso is not None and n - piso >= cfg["threshold_tokens"]:
             return {"systemMessage": t("stop_warning", total=n // 1000, extra=(n - piso) // 1000,

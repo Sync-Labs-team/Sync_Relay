@@ -1025,7 +1025,10 @@ export const register: Register = on => {
       // Contagem sem timer vivo (hot reload no meio): nao serve mais.
       if (f === 'contando' && contagem === null) await ocioso($, undefined, 'contagem sem timer')
       else if (f === 'ocioso' && (await read($, auto)) && (await read($, interativo))) {
-        if (deveAvisar(n, await read($, piso), await read($, adiado), 'ocioso', await read($, limiar))) await iniciarContagem($)
+        // Agente vivo: o auto nem comeca (o /clear nao para o agente, mas o aviso dele cairia na sessao nova sem contexto);
+        // a faixa segue avisando e o turno do aviso do fim dele confere de novo.
+        if (deveAvisar(n, await read($, piso), await read($, adiado), 'ocioso', await read($, limiar)) && (await vivos($, 'auto')) === 0)
+          await iniciarContagem($)
       }
       return r
     }

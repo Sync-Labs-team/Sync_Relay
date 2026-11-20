@@ -97,9 +97,11 @@ The table also asks subagents for a short report. When a subagent's final report
 ### Handoff
 
 1. Type `handoff` or `passagem` (with or without a leading `/`) in the prompt.
-2. The hook tells the model to wait until no agent is running and then write the state to a Markdown file of at most 8,000 characters, in your language: your request, state, decisions, where everything is, numbered next steps, risks. On Claude Code the model writes it itself, and the core pre-approves that one `Write` (see Permission for the handoff write, below). On Codex it delegates the write to a subagent that inherits the context.
+2. The hook tells the model to write the state to a Markdown file of at most 8,000 characters, in your language: your request, state, decisions, where everything is, what does not carry over by itself, numbered next steps, risks. If a subagent is still running, the model says so and writes the file when the subagent reports back. On Claude Code the model writes it itself, and the core pre-approves that one `Write` (see Permission for the handoff write, below). On Codex it delegates the write to a subagent that inherits the context.
 3. The model replies `handoff ready`. Start the new session: `/clear` in Claude Code, `/new` in Codex.
 4. The `SessionStart` hook of the new session puts the file in its context.
+
+What `/clear` does to work in flight, measured in `claude -p` (Claude Code 2.1.329): an active `/goal` is dropped; scheduled tasks (`CronCreate`, `/loop`) stay and fire in the new session; background agents and commands keep running, and their notices arrive in the new session, which did not start them. So the file carries the goal's condition word for word (you set it again with `/goal`), each scheduled task (id, schedule, prompt, so the new session does not create it twice) and each background agent or command still running (id, what it does, output file).
 
 The core is the only part that delivers the handoff, in both CLIs. Which file a session takes:
 
@@ -107,7 +109,7 @@ The core is the only part that delivers the handoff, in both CLIs. Which file a 
 - Claude Code after `/clear`, with no `CLAUDE_PID`: the only `<slug>-<8hex>.md` of the directory that is under 30 minutes old. With two or more, nothing is delivered.
 - A new Claude Code window: only a Codex handoff for the same directory.
 - Codex: the newest handoff for the same directory, including those written by Claude Code (see Known limits).
-- A handoff older than 30 minutes is ignored. Each file is taken once. If an error happens after a session took a file and before the text is printed, the file is renamed back, so it is not lost.
+- A handoff older than 30 minutes is ignored. Each file is taken once. If an error happens after a session took a file and before the text is printed, the file is renamed back, and on Claude Code the `_req-<PID>.txt` marker is put back as it was, so the next `/clear` still gets it.
 - Text over 9,000 characters is cut, with a note and the file path. Claude Code turns anything over 10,000 characters of hook context into a path and a short preview, so the whole context stays under 9,000 characters. The handoff goes in first and is never cut for anything else. The routing table gets what is left: if it does not fit it is cut and ends with a one-line note, and if there is no room even for the note it is left out.
 
 Where the files live, by default:
@@ -131,7 +133,7 @@ It applies in every mode, `off` included. Your `deny` and `ask` rules still appl
 
 ### Context warning
 
-At the end of a turn (`Stop`), if the context has grown by `threshold_tokens` (150,000 by default) over where the session started, a message tells you to type `handoff`. The count is growth over the session's own start, not an absolute size. On Claude Code the plugin sums the input, cache creation and cache read tokens of the last main-session response. On Codex it uses the last token count in the rollout. Set `stop_warning` to `false` on Claude Code if the band is installed, since the band shows its own banner.
+At the end of a turn (`Stop`), if the context has grown by `threshold_tokens` (150,000 by default) over where the session started, a message tells you to type `handoff`. The count is growth over the session's own start, not an absolute size. On Claude Code the plugin sums the input, cache creation and cache read tokens of the last main-session response. On Codex it uses the last token count in the rollout. On Claude Code the warning waits while a subagent is running (the `background_tasks` field of the `Stop` input) and comes at the end of the turn its report brings; a background shell command does not hold it, since a server may never end. Set `stop_warning` to `false` on Claude Code if the band is installed, since the band shows its own banner.
 
 The measurements behind 150,000 are in the next section.
 
@@ -190,7 +192,7 @@ Saved as `C:\Users\alice\AppData\Roaming\synclabs-relay\config.json` on Windows 
 Install `synclabs-relay-band` and a banner appears when the limit is reached, with a Switch session button. The switch waits for the main session to be idle and for no agent to be running, asks for the handoff, then runs `/clear`. The new session gets the handoff from the core. When it is done the band shows "Handoff saved; new session opened." It does not say the handoff was delivered: the core does that, and only if the files match (see Handoff). Cancel withdraws the request: the band empties the marker, so nothing is delivered by PID.
 
 - `/handoff`: switch now.
-- `/handoff auto`: turn the automatic mode on or off. Off by default. When on, it switches by itself after a 15 s countdown that you can cancel.
+- `/handoff auto`: turn the automatic mode on or off. Off by default. When on, it switches by itself after a 15 s countdown that you can cancel. The countdown does not start while an agent is pending or running; the banner still shows. The mods API lists agents only, so the band cannot see background shell commands, scheduled tasks or a goal: the handoff file carries those.
 - `/handoff button`: hide or show the button above the input.
 - `/handoff threshold [Nk|default]`: show or set the limit.
 

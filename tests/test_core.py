@@ -357,6 +357,15 @@ class Lembrete(Limpo):
             self.assertEqual(os.stat(HD).st_mode & 0o777, 0o700)
         self.assertTrue(HD.is_dir())  # the hook creates the folder before asking for the write
 
+    def test_pedido_leva_meta_agendamentos_e_segundo_plano(self):  # v0.1.1, measured: /clear drops the goal, keeps the rest
+        for lang, msgs in (("en", EN), ("pt-BR", PT)):
+            c = ctx(rodar("claude", {**UPS, "prompt": "handoff"}, CLI, {"lang": lang}))
+            for termo in ("/goal", "CronList", "/clear"):
+                self.assertIn(termo, c, (lang, termo))
+            self.assertLess(len(msgs["handoff_request"]), 1800, lang)
+        self.assertIn("subagent", ctx(rodar("claude", {**UPS, "prompt": "handoff"}, CLI, {"lang": "en"})))
+        self.assertIn("subagente", ctx(rodar("claude", {**UPS, "prompt": "passagem"}, CLI, {"lang": "pt-BR"})))
+
 
 class SessionStartTabela(Limpo):  # scenario 6
     def test_tabela_da_config(self):
@@ -705,6 +714,41 @@ class Juncao(Limpo):
         self.assertEqual(arq.read_text("utf-8"), "keep me")
         self.assertEqual([p.name for p in HD.iterdir()], [arq.name])
 
+    def test_excecao_depois_da_posse_devolve_o_marcador(self):  # v0.1.1: given back with its marker, never stranded
+        from unittest import mock
+        a = self.pede(self.A, "111", "state of A")
+        m = HD / "_req-111.txt"
+        nome, quando = m.read_text("utf-8"), os.stat(m).st_mtime_ns
+        env = {**SBENV, "SYNCLABS_RELAY_CONFIG": str(SB / "config.json"), "LANG": "en_US.UTF-8",
+               "CLAUDE_CODE_ENTRYPOINT": "cli", "CLAUDE_PID": "111"}
+        with mock.patch.object(relay, "_u16", side_effect=RuntimeError("boom")):
+            saida, _ = relay.processar({**SS, "source": "clear", "session_id": "novo-1"}, "claude", env, str(SB),
+                                       os.name == "nt")
+        self.assertIsNone(saida)
+        self.assertTrue(a.exists())
+        self.assertEqual(m.read_text("utf-8"), nome)
+        self.assertEqual(os.stat(m).st_mtime_ns, quando)  # same age: the Write window does not reopen
+        self.assertIn("state of A", self.clear("111"))  # the next /clear of this process still delivers
+
+    def test_saida_que_falha_devolve_o_marcador(self):  # v0.1.1: same, when the output cannot be written
+        import io
+        from unittest import mock
+        a = self.pede(self.A, "111", "state of A")
+        nome = (HD / "_req-111.txt").read_text("utf-8")
+
+        class Quebrado(io.StringIO):
+            def write(self, s):
+                raise OSError("pipe closed")
+        env = {**SBENV, "SYNCLABS_RELAY_MODE": "force", "SYNCLABS_RELAY_CONFIG": str(SB / "config.json"),
+               "LANG": "en_US.UTF-8", "CLAUDE_PID": "111"}
+        entrada = io.TextIOWrapper(io.BytesIO(json.dumps({**SS, "source": "clear", "session_id": "novo-1"}).encode()))
+        with mock.patch.dict(os.environ, env), mock.patch.object(sys, "stdin", entrada), \
+                mock.patch.object(sys, "stdout", Quebrado()), mock.patch.object(sys, "argv", ["x", "claude"]):
+            relay.main()
+        self.assertTrue(a.exists())
+        self.assertEqual((HD / "_req-111.txt").read_text("utf-8"), nome)
+        self.assertIn("state of A", self.clear("111"))
+
     def test_slug_que_comeca_com_hifen(self):  # the cut of a long cwd used to start with '-'
         cwd = "C:\\Users\\alice\\projects\\demo\\" + "a" * 33 + "\\work\\sandbox\\t3\\cwd"
         self.assertFalse(relay.slug(cwd).startswith("-"))  # the readable part is cut at 60 and never starts with '-'
@@ -886,6 +930,19 @@ class Stop(Limpo):
             self.assertIsNotNone(rodar("claude", {**STOP, "transcript_path": baixo}, CLI, {"threshold_tokens": 100000}))
             self.assertIsNotNone(rodar("claude", {**STOP, "transcript_path": alto}, {**CLI, "SYNCLABS_RELAY_MODE": "off"}))
             self.assertIsNone(rodar("claude", {**STOP, "transcript_path": os.path.join(t, "nope.jsonl")}, CLI))
+
+    def test_subagente_rodando_adia_o_aviso(self):  # v0.1.1: format measured in claude -p 2.1.329 (Stop input)
+        sub = {"id": "a954cfc0cbd3f8644", "type": "subagent", "status": "running", "description": "bg sleeper",
+               "agent_type": "general-purpose"}
+        shell = {"id": "b7lan9eo0", "type": "shell", "status": "running", "description": "dev server", "command": "npm run dev"}
+        with tempfile.TemporaryDirectory() as t:
+            alto = {**STOP, "transcript_path": transcript_claude(t, "alto", [10000, 160000])}
+            self.assertIsNone(rodar("claude", {**alto, "background_tasks": [sub, shell]}, CLI))  # warns at the turn its report brings
+            for bt in ([shell], [], None, "junk", [None, 3]):  # a shell may never end (a server): it never holds the warning
+                self.assertIn("systemMessage", rodar("claude", {**alto, "background_tasks": bt}, CLI), bt)
+        # SubagentStop carries the same field: the report limit still applies
+        r = rodar("claude", {**SubagentStop.SUB, "background_tasks": [sub]}, CLI)
+        self.assertEqual(r["decision"], "block")
 
     def test_codex(self):
         with tempfile.TemporaryDirectory() as t:

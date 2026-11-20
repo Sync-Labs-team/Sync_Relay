@@ -860,15 +860,30 @@ test('regra 4: Agora troca ja', async ($, on) => {
   expect(c.enviados).toEqual(['handoff'])
 })
 
-test('regra 4: no fim da contagem, com agente vivo a troca espera o agente', async ($, on) => {
+test('regra 4: agente que comeca durante a contagem: no fim dela a troca espera o agente', async ($, on) => {
   const c = await auto($, on, { ligado: true })
-  c.agentes.v = [agente('running')]
   await turno($)
+  c.agentes.v = [agente('running')] // v0.1.1: alive before the turn, the countdown would not even start
   await c.relogio.advance(CONTAGEM_S * 1000)
   expect(c.enviados).toEqual([])
   c.agentes.v = []
   await c.relogio.advance(2_000)
   expect(c.enviados).toEqual(['handoff'])
+})
+
+test('v0.1.1: com agente vivo (pending ou running) o auto nem comeca a contagem; o turno depois do fim dele dispara', async ($, on) => {
+  const c = await auto($, on, { ligado: true })
+  for (const status of ['running', 'pending']) {
+    c.agentes.v = [agente(status)]
+    await turno($)
+    expect(await contando($)).toBe(false)
+    expect(await botao($, 'trocar')).toBe(true) // the banner still warns: only the automatic switch waits
+  }
+  await c.relogio.advance(60_000)
+  expect(c.enviados).toEqual([])
+  c.agentes.v = [agente('waiting'), agente('completed')] // same rule as the switch: these do not hold it
+  await turno($)
+  expect(await contando($, CONTAGEM_S)).toBe(true)
 })
 
 test('regra 5: Cancelar adia 50k, como o Depois, desliga o auto e nenhum timer sobra', async ($, on) => {
@@ -903,8 +918,8 @@ test('regra 6: mensagem da pessoa durante a contagem cancela e avisa', async ($,
 
 test('regra 6: mensagem durante o aguardando cancela a troca automatica', async ($, on) => {
   const c = await auto($, on, { ligado: true })
-  c.agentes.v = [agente('running')]
   await turno($)
+  c.agentes.v = [agente('running')]
   await c.relogio.advance(CONTAGEM_S * 1000)
   expect(await olhar($, { type: 'Text', text: /Aguardando 1/ })).toBeDefined()
   await pessoa($)
@@ -2369,8 +2384,8 @@ test('0.6.12 Cancelar com a sobrescrita SYNCLABS_RELAY_BAND_* desliga so a sessa
 
 test('0.6.12 Cancelar fora da contagem (espera por agente) nao desliga o auto', async ($, on) => {
   const c = await auto($, on, { ligado: true })
-  c.agentes.v = [agente('running')]
   await turno($)
+  c.agentes.v = [agente('running')]
   await c.relogio.advance(CONTAGEM_S * 1000) // vira aguardando
   expect(await olhar($, { type: 'Text', text: /Aguardando 1/ })).toBeDefined()
   await apertar($, 'cancelar')

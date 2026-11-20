@@ -21,7 +21,7 @@ O repositório tem dois plugins:
 
 - Python 3.9 ou mais novo, acessível como `python3` no PATH. Os ganchos chamam `python3` e mais nada.
 - Claude Code 2.1.323 ou mais novo. Testado na 2.1.328 e na 2.1.329.
-- Codex CLI. Testado na 0.170.0.
+- Codex CLI 0.170.0: o plugin instala e o gancho foi conferido sem modelo. Não foi testado numa sessão real do Codex (veja Instalação, Codex).
 - Os testes rodaram no Windows. macOS e Linux não foram testados.
 
 No Windows, o Claude Code roda os ganchos pelo Git Bash. Instaladores antigos do python.org não criam `python3`; sem ele, os ganchos falham em todo evento com um erro que não bloqueia, e o plugin fica inativo. O atalho da Microsoft Store responde por `python3`. Os ganchos falham abertos: sem Python, o CLI continua funcionando.
@@ -46,6 +46,8 @@ claude plugin install synclabs-relay-band@synclabs-relay
 A faixa declara o núcleo como dependência, e o Claude Code não deixa desativar o núcleo enquanto a faixa estiver instalada. A faixa usa a API de mods do Claude Code, que está em acesso antecipado e pode mudar.
 
 Codex:
+
+> O suporte ao Codex não foi testado na v0.1.0. O plugin foi instalado no Codex e o gancho foi rodado direto, sem modelo, e negou uma ferramenta como esperado. Não foi testado numa sessão real do Codex: a trava, o aviso de contexto e a passagem ainda não foram vistos funcionando lá. Os testes estão previstos para a próxima versão.
 
 ```
 codex plugin marketplace add Sync-Labs-team/Sync_Relay
@@ -225,9 +227,9 @@ Custo do gancho, medido: 50 chamadas de `PreToolUse` pelo Git Bash no Windows, c
 
 ## Limites conhecidos
 
+- O suporte ao Codex não foi testado na v0.1.0. O plugin foi instalado e o gancho foi conferido sem modelo, mas não houve teste numa sessão real do Codex: a trava, o aviso de contexto e a passagem ainda não foram vistos funcionando lá. Os testes estão previstos para a próxima versão. O comando do gancho no Codex lê `PLUGIN_ROOT`, a variável que um gancho de plugin do Codex 0.170 foi medido recebendo, e recorre a `CLAUDE_PLUGIN_ROOT`.
 - A trava depende de sinais que os CLIs não documentam: `CLAUDE_CODE_ENTRYPOINT`, `agent_id` na entrada do `PreToolUse` do Claude Code, e `originator` e `source` no rollout do Codex. Uma atualização do CLI pode mudá-los. Se o plugin não consegue ler o sinal, desliga a trava naquela sessão e avisa uma vez. Se o `agent_id` sumir, os subagentes são negados; veja Como desligar.
 - O Codex só roda ganchos de plugin depois que você os aprova em `/hooks`. Gancho não aprovado falha em silêncio.
-- No Codex, a trava e o aviso de contexto ainda não foram testados em sessão real. Veja o changelog. O comando do gancho no Codex lê `PLUGIN_ROOT`, a variável que um gancho de plugin do Codex 0.170 foi medido recebendo, e recorre a `CLAUDE_PLUGIN_ROOT`; uma sessão real ainda não confirmou.
 - A gravação da passagem fica fora da pasta do seu projeto. No Claude Code o núcleo a pré-aprova nas condições de Permissão da gravação da passagem. Se faltar o `CLAUDE_PID` ou se o diretório de trabalho mudar antes do `Write`, o Claude Code pode pedir confirmação. Suas regras `deny` e `ask` continuam valendo.
 - O Codex enxerga por 30 minutos as passagens que o Claude Code gravou num diretório. Uma sessão do Codex aberta no mesmo diretório entre a gravação e o `/clear` leva a passagem.
 - Sem `CLAUDE_PID`, o `/clear` só entrega quando existe exatamente uma passagem recente do diretório.

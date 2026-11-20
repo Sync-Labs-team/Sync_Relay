@@ -27,6 +27,8 @@ Changed from the earlier local setup
 
 Tests: 76 for the core, 161 for the band.
 
+Codex support is untested in 0.1.0
+- The plugin installs on Codex 0.170.0 and its hook command was run directly, without a model, and denied a tool as expected. It was not tested in a real Codex session: that the lock and the context warning work after you approve the hooks in `/hooks`, and that `handoff` followed by `/new` delivers the file, has not been seen. Tests are planned for the next version.
+
 Not yet confirmed (see the README, Known limits)
-- On Codex: that the lock and the context warning work in a real TUI session after you approve the hooks in `/hooks`, and that `handoff` followed by `/new` delivers the file.
 - Installing from the GitHub repository. Installing from a local clone was run on Claude Code 2.1.329 and Codex 0.170.0.

@@ -21,7 +21,7 @@ There are two plugins in this repository:
 
 - Python 3.9 or newer, reachable as `python3` on the PATH. The hooks call `python3` and nothing else.
 - Claude Code 2.1.323 or newer. Tested on 2.1.328 and 2.1.329.
-- Codex CLI. Tested on 0.170.0.
+- Codex CLI 0.170.0: the plugin installs and its hook was checked without a model. Not tested in a real Codex session (see Install, Codex).
 - Tests ran on Windows. macOS and Linux were not tested.
 
 On Windows, Claude Code runs the hooks through Git Bash. Older python.org installers do not create `python3`; without it the hooks fail on every event with a non-blocking error and the plugin does nothing. The Microsoft Store alias answers to `python3`. The hooks fail open: with no Python, the CLI keeps working.
@@ -46,6 +46,8 @@ claude plugin install synclabs-relay-band@synclabs-relay
 The band declares the core as a dependency, and Claude Code refuses to disable the core while the band is installed. The band uses the Claude Code mods API, which is in early access and can change.
 
 Codex:
+
+> Codex support is untested in v0.1.0. The plugin was installed on Codex and its hook was run directly, without a model, and it denied a tool as expected. It was not tested in a real Codex session: the lock, the context warning and the handoff have not been seen working there. Tests are planned for the next version.
 
 ```
 codex plugin marketplace add Sync-Labs-team/Sync_Relay
@@ -225,9 +227,9 @@ Hook cost, measured: 50 `PreToolUse` calls through Git Bash on Windows, with `py
 
 ## Known limits
 
+- Codex support is untested in v0.1.0. The plugin was installed and its hook was checked without a model, but it was not tested in a real Codex session: the lock, the context warning and the handoff have not been seen working there. Tests are planned for the next version. The Codex hook command reads `PLUGIN_ROOT`, the variable a Codex 0.170 plugin hook was measured to receive, and falls back to `CLAUDE_PLUGIN_ROOT`.
 - The lock depends on signals the CLIs do not document: `CLAUDE_CODE_ENTRYPOINT`, `agent_id` in the Claude Code `PreToolUse` input, and `originator` and `source` in the Codex rollout. A CLI update can change them. If the plugin cannot read the signal it turns the lock off for that session and says so once. If `agent_id` disappears, subagents get denied; see Turning it off.
 - Codex runs plugin hooks only after you approve them in `/hooks`. Unapproved hooks fail silently.
-- On Codex the lock and the context warning were not tested in a real session yet. See the changelog. The Codex hook command reads `PLUGIN_ROOT`, the variable a Codex 0.170 plugin hook was measured to receive, and falls back to `CLAUDE_PLUGIN_ROOT`; a real session has not confirmed it yet.
 - The handoff write sits outside your project folder. On Claude Code the core pre-approves it under the conditions in Permission for the handoff write. If `CLAUDE_PID` is missing or the working directory changes before the `Write`, Claude Code may ask you to confirm. Your `deny` and `ask` rules still win.
 - Claude Code handoffs in a directory can be read by Codex for 30 minutes. A Codex session opened in the same directory between the write and the `/clear` takes the handoff.
 - Without `CLAUDE_PID`, `/clear` delivers only when exactly one fresh handoff of the directory exists.

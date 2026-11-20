@@ -14,10 +14,13 @@ Switch point and commands
 - New status line next to the statusLine: `Sync_Relay · auto off · 45k of 150k` (also `measuring`, `switching…`), and a fixed button `Sync_Relay auto: on/off`. `/relay button` hides only the button. `/relay button` and `/relay auto` are remembered between sessions. New config keys `button` (default `true`) and `auto` (optional; without it auto starts off); they only count while the band's store has no value.
 - The handoff text is capped at 9,000 characters in the context a new session receives.
 
+Code Mode
+- Code Mode: the `REPL` wrapper is allowed in the main session; calls inside it are still checked by name.
+
 Docs
 - README in English, Portuguese (pt-BR) and Spanish; `docs/` with configuration, how it works and FAQ; `CONTRIBUTING.md`, `AGENTS.md` and issue forms. Contributions are by issue only.
 
-Tests: 85 for the core, 182 for the band.
+Tests: 86 for the core, 182 for the band.
 
 Upgrading from 0.1.0
 - `/handoff`, `handoff` and `passagem` stop working. Use `/relay` or `relay`.

@@ -1,0 +1,45 @@
+name: Bug report
+description: Something broke or behaved in a way the docs do not explain.
+labels: [bug]
+body:
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin version
+      description: Core, and the band if installed (for example "synclabs-relay 0.1.1, band 0.1.1").
+    validations:
+      required: true
+  - type: input
+    id: cli
+    attributes:
+      label: CLI and version
+      description: For example "Claude Code 2.1.329" or "Codex 0.170.0".
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: For example "Windows 11". Only Windows was tested.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      description: The shortest steps that reproduce it. No secrets, client or project names, or private paths.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The exact output. For the switch point or the lock, include the output of /relay status.
+    validations:
+      required: true

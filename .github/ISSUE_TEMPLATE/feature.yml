@@ -1,0 +1,38 @@
+name: Feature request
+description: Something that would make Sync_Relay simpler, faster or more useful.
+labels: [enhancement]
+body:
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin version
+      description: Core, and the band if installed.
+    validations:
+      required: true
+  - type: input
+    id: cli
+    attributes:
+      label: CLI and version
+      description: For example "Claude Code 2.1.329" or "Codex 0.170.0".
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+    validations:
+      required: true
+  - type: textarea
+    id: situation
+    attributes:
+      label: What you were doing
+      description: The situation that made you want this. No secrets, client or project names, or private paths.
+    validations:
+      required: true
+  - type: textarea
+    id: wanted
+    attributes:
+      label: What would have helped
+      description: What you expected, and why it would be better.
+    validations:
+      required: true

@@ -1,0 +1,44 @@
+name: Question
+description: How to do something, or why it works the way it does.
+labels: [question]
+body:
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin version
+      description: Core, and the band if installed.
+    validations:
+      required: true
+  - type: input
+    id: cli
+    attributes:
+      label: CLI and version
+      description: For example "Claude Code 2.1.329" or "Codex 0.170.0".
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you did
+      description: What you tried, and what you read (README, docs/faq.md). No secrets, client or project names, or private paths.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The exact output, if there was any.
+    validations:
+      required: true

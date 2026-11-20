@@ -33,6 +33,7 @@ LIVRES = {
     "ReadNotifications", "ScheduleWakeup", "SendUserFile", "PushNotification", "EnterPlanMode",
     "ExitPlanMode", "CronCreate", "CronList", "CronDelete", "EndConversation", "TodoWrite",
     "SendUserMessage", "TeamCreate",
+    "REPL",  # Code Mode wrapper: each inner tools.X() call fires its own PreToolUse with the real name, still judged
     # Codex
     "spawn_agent", "wait_agent", "wait", "send_input", "send_message", "followup_task", "list_agents",
     "interrupt_agent", "close_agent", "resume_agent", "update_plan", "request_user_input",

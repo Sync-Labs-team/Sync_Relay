@@ -1,0 +1,303 @@
+{
+  "_comment": "Shared contract: tests/test_core.py (Python) and band.test.tsx (TS) must both produce these slugs. normalized cwd = the path as it came; on Windows lowercase and '/' becomes '\\\\'; no trailing separator (except a root). slug = <readable part>-<h8>: readable = lowercase, runs of non [a-z0-9] become '-', strip '-', keep the last 60 chars, strip a leading '-'; h8 = FNV-1a 32 bits of the UTF-8 bytes of the normalized cwd, 8 lowercase hex digits. An empty readable part gives just h8. 'windows' says which normalization applies. All paths are fictional.",
+  "slug_cases": [
+    {
+      "name": "windows_trailing_backslash",
+      "cwd": "C:\\Users\\alice\\Projects\\demo\\",
+      "windows": true,
+      "slug": "c-users-alice-projects-demo-e64719f9"
+    },
+    {
+      "name": "windows_lowercase_drive",
+      "cwd": "c:\\users\\alice\\projects\\demo",
+      "windows": true,
+      "slug": "c-users-alice-projects-demo-e64719f9"
+    },
+    {
+      "name": "windows_forward_slashes",
+      "cwd": "C:/Users/alice/Projects/demo",
+      "windows": true,
+      "slug": "c-users-alice-projects-demo-e64719f9"
+    },
+    {
+      "name": "windows_spaces",
+      "cwd": "C:\\Users\\alice\\My Projects\\Demo App",
+      "windows": true,
+      "slug": "c-users-alice-my-projects-demo-app-ef3b85e0"
+    },
+    {
+      "name": "windows_root",
+      "cwd": "C:\\",
+      "windows": true,
+      "slug": "c-1cf80bec"
+    },
+    {
+      "name": "accented_chars",
+      "cwd": "C:\\Users\\alice\\Projetos\\A\u00e7\u00e3o R\u00e1pida\\caf\u00e9",
+      "windows": true,
+      "slug": "c-users-alice-projetos-a-o-r-pida-caf-41f56534"
+    },
+    {
+      "name": "posix_path",
+      "cwd": "/home/alice/projects/demo",
+      "windows": false,
+      "slug": "home-alice-projects-demo-20fb4869"
+    },
+    {
+      "name": "posix_trailing_slash",
+      "cwd": "/home/alice/projects/demo/",
+      "windows": false,
+      "slug": "home-alice-projects-demo-20fb4869"
+    },
+    {
+      "name": "posix_root",
+      "cwd": "/",
+      "windows": false,
+      "slug": "2a0c975e"
+    },
+    {
+      "name": "posix_case_matters",
+      "cwd": "/home/alice/Projects/Demo",
+      "windows": false,
+      "slug": "home-alice-projects-demo-ec7f1da9"
+    },
+    {
+      "name": "long_cwd_over_60_chars",
+      "cwd": "C:\\Users\\alice\\Documents\\Projects\\Acme Corp\\services\\payments-gateway\\packages\\billing-engine\\src",
+      "windows": true,
+      "slug": "e-corp-services-payments-gateway-packages-billing-engine-src-84dd564b"
+    },
+    {
+      "name": "empty_cwd",
+      "cwd": "",
+      "windows": false,
+      "slug": "811c9dc5"
+    },
+    {
+      "name": "only_separators_windows",
+      "cwd": "\\/\\//",
+      "windows": true,
+      "slug": "d90c17db"
+    },
+    {
+      "name": "only_separators_posix",
+      "cwd": "\\/\\//",
+      "windows": false,
+      "slug": "554853c0"
+    },
+    {
+      "name": "collision_underscore",
+      "cwd": "C:\\w\\my_app",
+      "windows": true,
+      "slug": "c-w-my-app-7e127ca5"
+    },
+    {
+      "name": "collision_hyphen",
+      "cwd": "C:\\w\\my-app",
+      "windows": true,
+      "slug": "c-w-my-app-9ee62b13"
+    },
+    {
+      "name": "collision_space",
+      "cwd": "C:\\w\\My App",
+      "windows": true,
+      "slug": "c-w-my-app-3c9bc78a"
+    },
+    {
+      "name": "collision_dot",
+      "cwd": "C:\\w\\my.app",
+      "windows": true,
+      "slug": "c-w-my-app-7da5d910"
+    },
+    {
+      "name": "cjk_a",
+      "cwd": "/srv/\u4e2d\u6587",
+      "windows": false,
+      "slug": "srv-4da7b9b8"
+    },
+    {
+      "name": "cjk_b",
+      "cwd": "/srv/\u65e5\u672c",
+      "windows": false,
+      "slug": "srv-391af7ac"
+    },
+    {
+      "name": "long_same_tail_a",
+      "cwd": "/a/xxxxxxxxxx/yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+      "windows": false,
+      "slug": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-27cb939b"
+    },
+    {
+      "name": "long_same_tail_b",
+      "cwd": "/b/yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+      "windows": false,
+      "slug": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-679133b1"
+    }
+  ],
+  "handoff_dir": {
+    "default": {
+      "windows": {
+        "env": {
+          "LOCALAPPDATA": "C:\\Users\\alice\\AppData\\Local"
+        },
+        "expected": "C:\\Users\\alice\\AppData\\Local\\synclabs-relay\\handoffs"
+      },
+      "posix_xdg": {
+        "env": {
+          "XDG_STATE_HOME": "/home/alice/.state"
+        },
+        "expected": "/home/alice/.state/synclabs-relay/handoffs"
+      },
+      "posix_home": {
+        "env": {},
+        "home": "/home/alice",
+        "expected": "/home/alice/.local/state/synclabs-relay/handoffs"
+      }
+    }
+  },
+  "distinct": [
+    [
+      "collision_underscore",
+      "collision_hyphen",
+      "collision_space",
+      "collision_dot"
+    ],
+    [
+      "cjk_a",
+      "cjk_b"
+    ],
+    [
+      "long_same_tail_a",
+      "long_same_tail_b"
+    ]
+  ],
+  "same": [
+    [
+      "windows_trailing_backslash",
+      "windows_lowercase_drive",
+      "windows_forward_slashes"
+    ],
+    [
+      "posix_path",
+      "posix_trailing_slash"
+    ]
+  ],
+  "handoff_dir_rule": {
+    "comment": "same rule in the core script and in the band: '~' at the start expands to home; Windows needs a drive (C:\\ or C:/) or UNC (\\\\srv\\share); POSIX needs '/'; a '..' segment is rejected; rejected = default folder.",
+    "home": {
+      "windows": "C:\\Users\\alice",
+      "posix": "/home/alice"
+    },
+    "windows": {
+      "ok": [
+        "C:\\h",
+        "C:/h",
+        "c:/h/sub",
+        "\\\\srv\\share\\h",
+        "~/h",
+        "~\\h",
+        "~"
+      ],
+      "bad": [
+        "/hh",
+        "\\hh",
+        "h",
+        "rel\\h",
+        "C:h",
+        "C:/x/..",
+        "C:/x/.. ",
+        "C:/x/...",
+        "\\\\srv",
+        "~alice/h",
+        ""
+      ]
+    },
+    "posix": {
+      "ok": [
+        "/h",
+        "/h/sub",
+        "~/h",
+        "~"
+      ],
+      "bad": [
+        "h",
+        "rel/h",
+        "C:/x",
+        "~alice/h",
+        "/a/..",
+        "/a/../b",
+        ""
+      ]
+    }
+  },
+  "lang": [
+    [
+      "pt",
+      "pt-BR"
+    ],
+    [
+      "PT",
+      "pt-BR"
+    ],
+    [
+      "pt-br",
+      "pt-BR"
+    ],
+    [
+      "pt_BR",
+      "pt-BR"
+    ],
+    [
+      "PT-br",
+      "pt-BR"
+    ],
+    [
+      "pt-PT",
+      "pt-BR"
+    ],
+    [
+      "en",
+      "en"
+    ],
+    [
+      "EN",
+      "en"
+    ],
+    [
+      "en-US",
+      "en"
+    ],
+    [
+      "en_GB",
+      "en"
+    ],
+    [
+      "en-us",
+      "en"
+    ],
+    [
+      "de",
+      "locale"
+    ],
+    [
+      "",
+      "locale"
+    ],
+    [
+      "auto",
+      "locale"
+    ],
+    [
+      "portuguese",
+      "locale"
+    ],
+    [
+      "ptx",
+      "locale"
+    ],
+    [
+      "english",
+      "locale"
+    ]
+  ]
+}

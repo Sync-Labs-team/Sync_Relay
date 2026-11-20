@@ -1,0 +1,19 @@
+{
+  "name": "synclabs-relay",
+  "description": "Sync_Relay by Sync_Labs: main-session delegation guard and session handoff for Claude Code and Codex.",
+  "owner": { "name": "Sync_Labs" },
+  "plugins": [
+    {
+      "name": "synclabs-relay",
+      "description": "Hooks: keeps the main session delegating, hands a session over to a fresh one, warns when context grows.",
+      "source": "./plugins/synclabs-relay",
+      "category": "development"
+    },
+    {
+      "name": "synclabs-relay-band",
+      "description": "Optional Claude Code band with a Switch session button (needs synclabs-relay).",
+      "source": "./plugins/synclabs-relay-band",
+      "category": "development"
+    }
+  ]
+}

@@ -63,6 +63,8 @@ let forcado = false
 let avisouSemPasta = false
 // A sessao e interativa? Do modulo, porque o $.state zera no /clear e o motor nao dispara session.start nele.
 let interativoModulo = false
+// Toast "passagem aberta": decidido no session.end, mostrado so na sessao nova (no session.end o /clear redesenha a tela e o apaga).
+let toastAbertaPendente = false
 
 /** FNV-1a 32 bits over the UTF-8 bytes (a lone surrogate is '?', like Python's errors="replace"), 8 lowercase hex digits. */
 function fnv1a(texto: string): string {
@@ -346,7 +348,9 @@ const MSG = {
     measuring: 'measuring',
     cmdDescription: 'Writes this session\'s handoff and opens a new one with it. "/relay auto" turns the automatic switch on or off; "/relay status" shows the state; "/relay button" hides or shows the button.',
     usage: 'Usage: /relay (switch now), /relay auto (turn the automatic switch on or off), /relay status (show the state) or /relay button (hide or show the button).',
-    status: 'Lock: {0} · auto: {1} · context: {2} · switch at {3} · handoffs: {4}',
+    status: 'Lock: {0} · auto: {1} · context: {2} · switch at {3} · handoffs: {4} · button: {5}',
+    buttonVisible: 'visible',
+    buttonHiddenWord: 'hidden',
     statusSwitch: '{0}k = floor {1}k + {2}k (compaction at {3}k: {4})',
     statusSwitchCapped: '{0}k = floor {1}k + {2}k (80% of the way to compaction at {3}k: {4})',
     statusTokens: '{0}k tokens',
@@ -405,7 +409,9 @@ const MSG = {
     measuring: 'medindo',
     cmdDescription: 'Grava a passagem desta sessão e abre uma nova já com ela. "/relay auto" liga ou desliga a troca automática; "/relay status" mostra o estado; "/relay button" esconde ou mostra o botão.',
     usage: 'Uso: /relay (troca agora), /relay auto (liga ou desliga a troca automática), /relay status (mostra o estado) ou /relay button (esconde ou mostra o botão).',
-    status: 'Trava: {0} · auto: {1} · contexto: {2} · troca em {3} · passagens: {4}',
+    status: 'Trava: {0} · auto: {1} · contexto: {2} · troca em {3} · passagens: {4} · botão: {5}',
+    buttonVisible: 'visível',
+    buttonHiddenWord: 'oculto',
     statusSwitch: '{0}k = piso {1}k + {2}k (compactação em {3}k: {4})',
     statusSwitchCapped: '{0}k = piso {1}k + {2}k (80% do caminho até a compactação em {3}k: {4})',
     statusTokens: '{0}k tokens',
@@ -578,8 +584,8 @@ async function lerSobrescrita($: Engine): Promise<void> {
 
 /** Text of `/relay status`: lock mode, auto, context, switch point (with its origin) and the handoff folder. */
 async function textoStatus($: Engine): Promise<string> {
-  const [ligado, n, pi, lim, comp, amb, pasta] = await Promise.all([
-    read($, auto), read($, tokens), read($, piso), read($, limiar), read($, compact),
+  const [ligado, n, pi, lim, comp, botao, amb, pasta] = await Promise.all([
+    read($, auto), read($, tokens), read($, piso), read($, limiar), read($, compact), read($, botaoFixo),
     ambiente($).catch((): Ambiente | null => null), pastaPassagens($).catch(() => null),
   ])
   const modoEnv = amb?.env.SYNCLABS_RELAY_MODE
@@ -593,7 +599,7 @@ async function textoStatus($: Engine): Promise<string> {
     const origem = tx(base === 'env' ? 'origEnv' : base === 'settings' ? 'origSettings' : 'origModel') + (pct ? tx('origPct') : '')
     troca = tx(c !== null && t - pi < lim ? 'statusSwitchCapped' : 'statusSwitch', k(t), k(pi), k(t - pi), c === null ? 0 : k(c), origem)
   }
-  return tx('status', modo, ligado ? tx('on') : tx('off'), n === null ? tx('measuring') : tx('statusTokens', k(n)), troca, pasta ?? '-')
+  return tx('status', modo, ligado ? tx('on') : tx('off'), n === null ? tx('measuring') : tx('statusTokens', k(n)), troca, pasta ?? '-', tx(botao ? 'buttonVisible' : 'buttonHiddenWord'))
 }
 
 /** Linha de status fixa ($.ui.status: uma por plugin, ao lado da statusLine do usuario): auto, quanto falta, ou trocando. */
@@ -1060,6 +1066,10 @@ function recarregar($: Engine, antigo: string, tentativa = 0): void {
       const id = await $.session.id().catch(() => antigo)
       if (id === antigo && tentativa < 100) return recarregar($, antigo, tentativa + 1)
       await carregar($, 'clear-timer')
+      if (toastAbertaPendente) {
+        toastAbertaPendente = false
+        $.ui.toast(tx('opened'))
+      }
     } catch {
       // carregar nao lanca; o catch cobre o resto (rejeicao nao tratada derrubaria o timer)
     }
@@ -1205,7 +1215,7 @@ export const register: Register = on => {
       await update($, piso, () => null)
       await update($, adiado, () => null)
       recarregar($, antes)
-      if (veioDaPassagem) $.ui.toast(tx('opened'))
+      toastAbertaPendente = veioDaPassagem
       return r
     }
     rastro($, `session.end reason=${e.reason} evento=${e.sessionId}`)

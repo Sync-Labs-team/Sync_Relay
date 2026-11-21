@@ -11,7 +11,7 @@ What counts as the main interactive session:
 
 If the plugin cannot tell, it does not block: it prints one message per session and carries on (fail open). The lock keeps the model on task; it is not a sandbox.
 
-Code Mode (`CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`): the `REPL` wrapper is on the free list. Each tool call inside it fires its own `PreToolUse` under the real tool name (`Read`, `Bash`, `Agent`...) and is judged like any other call, so `Read` is still denied and `Agent` still passes. Known limits: if the JavaScript of the REPL reads files or starts processes without calling a tool, that is outside the lock (the official documentation does not describe it); and because the plugin fails open, a hook failure in Code Mode means the inner call runs (Claude Code's default there, unless `onFailure` is `block`).
+Code Mode (`CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`): the `REPL` wrapper and `Poll` (waiting for its result) are on the free list. Each tool call inside it fires its own `PreToolUse` under the real tool name (`Read`, `Bash`, `Agent`...) and is judged like any other call, so `Read` is still denied and `Agent` still passes. Known limits: if the JavaScript of the REPL reads files or starts processes without calling a tool, that is outside the lock (the official documentation does not describe it); and because the plugin fails open, a hook failure in Code Mode means the inner call runs (Claude Code's default there, unless `onFailure` is `block`).
 
 ## The delegation table
 

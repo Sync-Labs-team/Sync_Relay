@@ -31,7 +31,7 @@ Needs Python 3.9 or newer as `python3`. Optional, Claude Code only: `claude plug
 - The automatic switch point follows the model's window: 180k tokens on a 1M Claude window, 166k on 200K, 102k on a Codex limit of 120k (first response at 30k tokens). Rule: [docs/how-it-works.md](docs/how-it-works.md).
 - Hooks cost about 196 ms per call on Windows with the Microsoft Store `python3` shortcut, and about 26 ms of interpreter time with python.org Python.
 - 0 network calls. Everything stays under your user profile. Handoff text is capped at 9,000 characters.
-- 85 core tests and 182 band tests.
+- 86 core tests and 182 band tests.
 
 ## Quickstart
 

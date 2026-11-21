@@ -31,7 +31,7 @@ Precisa de Python 3.9 ou mais novo como `python3`. Opcional, só no Claude Code:
 - O ponto de troca automático segue a janela do modelo: 180k tokens numa janela de 1M do Claude, 166k em 200K, 102k num limite de 120k do Codex (primeira resposta em 30k tokens). Regra: [docs/how-it-works.md](docs/how-it-works.md).
 - O gancho custa cerca de 196 ms por chamada no Windows com o atalho `python3` da Microsoft Store, e cerca de 26 ms de interpretador com o Python do python.org.
 - 0 chamadas de rede. Tudo fica no seu perfil de usuário. O texto da passagem é limitado a 9.000 caracteres.
-- 85 testes do núcleo e 182 do band.
+- 86 testes do núcleo e 182 do band.
 
 ## Início rápido
 

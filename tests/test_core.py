@@ -269,8 +269,9 @@ class Trava(Limpo):  # scenarios 1-3
             self.assertIsNone(rodar("claude", {**PRE, "tool_name": livre}, CLI), livre)
         self.assertTrue(negou(rodar("claude", {**PRE, "tool_name": "mcp__x__y"}, CLI)))
 
-    def test_repl_code_mode(self):  # REPL is the Code Mode wrapper; its inner calls fire their own PreToolUse
+    def test_repl_code_mode(self):  # REPL is the Code Mode wrapper; its inner calls fire their own PreToolUse; Poll waits for its result
         self.assertIsNone(rodar("claude", {**PRE, "tool_name": "REPL"}, CLI))
+        self.assertIsNone(rodar("claude", {**PRE, "tool_name": "Poll"}, CLI))
         self.assertTrue(negou(rodar("claude", {**PRE, "tool_name": "Read"}, CLI)))
         self.assertIsNone(rodar("claude", {**PRE, "tool_name": "Agent"}, CLI))
 

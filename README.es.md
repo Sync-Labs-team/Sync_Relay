@@ -31,7 +31,7 @@ Necesita Python 3.9 o superior como `python3`. Opcional, solo en Claude Code: `c
 - El punto de cambio automático sigue la ventana del modelo: 180k tokens con una ventana de 1M de Claude, 166k con 200K, 102k con un límite de 120k de Codex (primera respuesta en 30k tokens). Regla: [docs/how-it-works.md](docs/how-it-works.md).
 - El hook cuesta unos 196 ms por llamada en Windows con el atajo `python3` de la Microsoft Store, y unos 26 ms de intérprete con el Python de python.org.
 - 0 llamadas de red. Todo queda en tu perfil de usuario. El texto del traspaso está limitado a 9.000 caracteres.
-- 85 pruebas del núcleo y 182 del band.
+- 86 pruebas del núcleo y 182 del band.
 
 ## Inicio rápido
 

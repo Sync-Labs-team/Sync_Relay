@@ -11,11 +11,11 @@ Safe switch
 Switch point and commands
 - The switch point is `floor + min(D, 0.8 x (C - floor))`: `D` is `threshold_tokens` (150,000 by default), `floor` the tokens of the session's first response (measured: everything the CLI loaded at the start, not a file), `C` the CLI's auto-compaction point (Claude Code: `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `autoCompactWindow`, then the model's window; Codex: `model_auto_compact_token_limit`). Examples with a floor of 30k: Claude 1M, 180k; Claude 200K, 166k; Codex with a limit of 120k, 102k.
 - The band command is `/relay` (`auto`, `button`, `status`); any other argument prints the usage. Typing `relay` as the whole message does the same as `/relay`.
-- New status line next to the statusLine: `Sync_Relay · auto off · 45k of 150k` (also `measuring`, `switching…`), and a fixed button `Sync_Relay auto: on/off`. `/relay button` hides only the button. `/relay button` and `/relay auto` are remembered between sessions. New config keys `button` (default `true`) and `auto` (optional; without it auto starts off); they only count while the band's store has no value.
+- New status line next to the statusLine: `Sync_Relay · auto off · 45k of 150k` (also `measuring`, `switching…`), and a fixed button `Sync_Relay auto: on/off`. `/relay button` hides only the button. `/relay button` and `/relay auto` are remembered between sessions. `/relay status` also shows whether the button is visible or hidden. New config keys `button` (default `true`) and `auto` (optional; without it auto starts off); they only count while the band's store has no value.
 - The handoff text is capped at 9,000 characters in the context a new session receives.
 
 Code Mode
-- Code Mode: the `REPL` wrapper is allowed in the main session; calls inside it are still checked by name.
+- Code Mode: the `REPL` wrapper and `Poll` (which waits for its result or a background agent's) are allowed in the main session; calls inside it are still checked by name.
 
 Docs
 - README in English, Portuguese (pt-BR) and Spanish; `docs/` with configuration, how it works and FAQ; `CONTRIBUTING.md`, `AGENTS.md` and issue forms. Contributions are by issue only.

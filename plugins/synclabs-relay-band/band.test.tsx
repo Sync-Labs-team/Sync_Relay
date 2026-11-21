@@ -1693,7 +1693,10 @@ test('session.end clear com passagem gravada: o band avisa, mas NAO poe a passag
   const c = await auto($, on, { ligado: false })
   await clearDaPassagem($, c)
   expect(c.limpos).toBe(1)
-  await $.session.end({ reason: 'clear' } as never)
+  await clearReal($, c)
+  // O toast nao sai no session.end (o /clear redesenha a tela e o apaga): sai na sessao nova, depois do carregamento.
+  expect(c.toasts).not.toContain('Passagem gravada; sessão nova aberta.')
+  await c.relogio.advance(1_000)
   expect(c.toasts).toContain('Passagem gravada; sessão nova aberta.')
   await pessoa($, 'continue')
   await pessoa($, 'e agora')
@@ -1835,6 +1838,7 @@ test('digitar "relay" em ocioso inicia a troca e o /clear; o band nao poe contex
   expect(c.limpos).toBe(1)
   expect(c.toasts).not.toContain(ADIADA)
   await $.session.end({ reason: 'clear' } as never)
+  await c.relogio.advance(3_000) // o toast sai na sessao nova, depois do carregamento
   expect(c.toasts).toContain('Passagem gravada; sessão nova aberta.')
   await pessoa($, 'continue')
   expect(semContexto(c)).toBe(true)
@@ -1846,6 +1850,7 @@ test('digitar "relay" com /clear recusado fica pronta; o /clear manual segue o m
   await digitada($, c, 'relay')
   expect(c.toasts).toContain('Passagem gravada. Digite /clear para abrir a sessão nova já com ela.')
   await $.session.end({ reason: 'clear' } as never)
+  await c.relogio.advance(3_000) // o toast sai na sessao nova, depois do carregamento
   expect(c.toasts).toContain('Passagem gravada; sessão nova aberta.')
   await pessoa($, 'continue')
   expect(semContexto(c)).toBe(true)
@@ -2024,6 +2029,7 @@ test('falha ao gravar o rastro nao quebra o fluxo nem o /clear', async ($, on) =
   await $.session.end({ reason: 'clear' } as never)
   await pessoa($, 'continue')
   await dormir(50)
+  await c.relogio.advance(3_000) // o toast sai na sessao nova, depois do carregamento
   expect(c.toasts).toContain('Passagem gravada; sessão nova aberta.')
   expect(c.escritas.size).toBe(0)
 })
@@ -2130,10 +2136,12 @@ test('/relay status (pt-BR): trava, auto, contexto, ponto de troca com a origem 
   c.tokens.v = 182_000
   await turno($, { turnId: 't2' })
   expect(await statusCmd($)).toBe(
-    'Trava: enforce · auto: desligado · contexto: 182k tokens · troca em 180k = piso 30k + 150k (compactação em 967k: padrão do modelo) · passagens: C:/Users/x/AppData/Local/synclabs-relay/handoffs',
+    'Trava: enforce · auto: desligado · contexto: 182k tokens · troca em 180k = piso 30k + 150k (compactação em 967k: padrão do modelo) · passagens: C:/Users/x/AppData/Local/synclabs-relay/handoffs · botão: visível',
   )
   await $.command.run({ command: 'relay', args: 'auto' } as never)
   expect(await statusCmd($)).toMatch(/auto: ligado/)
+  await $.command.run({ command: 'relay', args: 'button' } as never)
+  expect(await statusCmd($)).toMatch(/botão: oculto$/)
 })
 
 test('/relay status (en) com janela de 200K: o teto de 80% do caminho aparece na origem', async ($, on) => {
@@ -2142,7 +2150,7 @@ test('/relay status (en) com janela de 200K: o teto de 80% do caminho aparece na
   c.tokens.v = 100_000
   await turno($, { turnId: 't2' })
   expect(await statusCmd($)).toBe(
-    'Lock: enforce · auto: on · context: 100k tokens · switch at 166k = floor 30k + 136k (80% of the way to compaction at 200k: model default) · handoffs: C:/Users/x/AppData/Local/synclabs-relay/handoffs',
+    'Lock: enforce · auto: on · context: 100k tokens · switch at 166k = floor 30k + 136k (80% of the way to compaction at 200k: model default) · handoffs: C:/Users/x/AppData/Local/synclabs-relay/handoffs · button: visible',
   )
 })
 
@@ -2415,6 +2423,7 @@ test('session.end clear: $.session.id() rejeitando depois do next(e) nao aborta 
   await clearDaPassagem($, c)
   c.idFalhaNoFim.v = true
   await $.session.end({ reason: 'clear' } as never)
+  await c.relogio.advance(3_000) // o toast sai na sessao nova, depois do carregamento
   expect(c.toasts).toContain('Passagem gravada; sessão nova aberta.')
   c.idFalha.v = false
   await pessoa($, 'oi')

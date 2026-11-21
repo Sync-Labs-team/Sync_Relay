@@ -8,7 +8,7 @@ If there is no `python3` at all, the hooks fail on every event with a non-blocki
 
 ## Why is the command `/relay`?
 
-A plugin command carries the plugin's name, so it does not clash with the commands you already have. `relay` typed as the whole message does the same and is the way to hand over on Codex (then `/new`) or on Claude Code without the band.
+`/relay` is the band's command: it exists only on Claude Code with the band installed, and it carries the plugin's name so it does not clash with the commands you already have. Without the band, and on Codex, type the word `relay` as the whole message: it does the same (then `/clear` on Claude Code or `/new` on Codex).
 
 ## Does it work on Codex?
 
@@ -24,7 +24,7 @@ If you installed the band, remove or disable the band first (`claude plugin unin
 
 ## How do I upgrade from 0.1.0?
 
-Update both plugins. What changed for you is in [CHANGELOG.md](../CHANGELOG.md), section "Upgrading from 0.1.0": `/handoff`, `handoff` and `passagem` stop working (use `/relay` or `relay`), and the old `threshold`, `limiar`, `botao` and `padrao` subcommands are gone (`/relay button` still exists).
+Update both plugins. What changed for you is in [CHANGELOG.md](../CHANGELOG.md), section "Upgrading from 0.1.0": `/handoff`, `handoff` and `passagem` stop working (use the word `relay`, or `/relay` if you have the band), and the old `threshold`, `limiar`, `botao` and `padrao` subcommands are gone (`/relay button` still exists).
 
 ## A tool was denied in my main session. Is that a bug?
 

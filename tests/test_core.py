@@ -930,7 +930,7 @@ class Stop(Limpo):
             self.assertIn("160k", msg)
             self.assertIn("+150k", msg)
             self.assertIn("switch point (160k)", msg)  # floor 10k + min(150k, 0.8 x (200k - 10k)): unknown model = 200K window
-            self.assertIn("/relay", msg)
+            self.assertIn("Type relay (or /relay with the band)", msg)  # the word works without the band and on Codex
             self.assertNotIn("Type: handoff", msg)
             self.assertIsNone(rodar("claude", {**STOP, "transcript_path": baixo}, CLI))
             self.assertIsNone(rodar("claude", {**STOP, "transcript_path": unico}, CLI))  # no floor: no warning
@@ -962,7 +962,7 @@ class Stop(Limpo):
             msg = rodar("codex", {**STOP, "transcript_path": alto})["systemMessage"]
             self.assertIn("245k", msg)
             self.assertIn("155k", msg)
-            self.assertIn("/relay", msg)
+            self.assertRegex(msg, r"(Type relay \(or|Digite relay \(ou) /relay")  # language follows the machine; the word works on Codex
             self.assertIsNone(rodar("codex", {**STOP, "transcript_path": quase}))
             self.assertIsNone(rodar("codex", {**STOP, "transcript_path": rollout(t, "codex-tui", 245000)}))  # no floor
             self.assertIsNone(rodar("codex", {**STOP, "transcript_path": rollout(t, "codex_exec", 245000, primeiro=90000)}))

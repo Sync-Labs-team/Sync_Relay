@@ -24,7 +24,7 @@ If you installed the band, remove or disable the band first (`claude plugin unin
 
 ## How do I upgrade from 0.1.0?
 
-Update both plugins. What changed for you is in [CHANGELOG.md](../CHANGELOG.md), section "Upgrading from 0.1.0": `/handoff`, `handoff` and `passagem` stop working (use `/relay` or `relay`), and the old `threshold` and `button` subcommands are gone.
+Update both plugins. What changed for you is in [CHANGELOG.md](../CHANGELOG.md), section "Upgrading from 0.1.0": `/handoff`, `handoff` and `passagem` stop working (use `/relay` or `relay`), and the old `threshold`, `limiar`, `botao` and `padrao` subcommands are gone (`/relay button` still exists).
 
 ## A tool was denied in my main session. Is that a bug?
 

@@ -36,7 +36,7 @@ Precisa de Python 3.9 ou mais novo como `python3`. Opcional, só no Claude Code:
 ## Início rápido
 
 1. Instale o núcleo (acima) e abra uma sessão como de costume. A sessão principal passa a delegar.
-2. Quando o contexto crescer, digite `/relay` (ou só `relay`). O modelo grava a passagem.
+2. Quando o contexto crescer, digite a palavra `relay` sozinha na mensagem (com o band, `/relay` também funciona). O modelo grava a passagem.
 3. Digite `/clear` (no Codex, `/new`). A sessão nova começa com a passagem.
 
 Com o band, `/relay` faz os passos 2 e 3 por você, e `/relay auto` faz sozinho no ponto de troca.

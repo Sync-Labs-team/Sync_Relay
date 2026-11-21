@@ -1028,6 +1028,10 @@ class PontoDeTroca(Limpo):  # v0.1.1: switch = floor + min(D, 0.8 x (C - floor))
             self.assertIsNotNone(self.stop("claude", tr, {"CLAUDE_CONFIG_DIR": str(cc)}))  # settings: 126k
             (cc / "settings.json").write_text("{broken", "utf-8")
             self.assertIsNone(self.stop("claude", tr, {"CLAUDE_CONFIG_DIR": str(cc)}))  # unreadable: ignored
+            for bruto in ('1e400', 'NaN', 'Infinity', '-Infinity'):  # not finite: ignored, the warning stays (model: 180k)
+                (cc / "settings.json").write_text('{"autoCompactWindow": %s}' % bruto, "utf-8")
+                tr2 = modelo_claude(t, "inf" + bruto[-3:], [30000, 180000], "claude-opus-4-7")
+                self.assertIn("switch point (180k)", self.stop("claude", tr2, {"CLAUDE_CONFIG_DIR": str(cc)})["systemMessage"], bruto)
             self.assertIsNotNone(self.stop("claude", tr, {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000"}))
             self.assertIsNone(self.stop("claude", tr, {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "100"}))  # 967k: still 180k
 
@@ -1044,6 +1048,11 @@ class PontoDeTroca(Limpo):  # v0.1.1: switch = floor + min(D, 0.8 x (C - floor))
             self.assertIsNone(self.stop("codex", alto, env))  # a key inside a table is not the global one
             (ch / "config.toml").write_text('model_auto_compact_token_limit = "x"\n', "utf-8")
             self.assertIsNone(self.stop("codex", alto, env))
+            (ch / "config.toml").write_text('model_auto_compact_token_limit = 120_000\n', "utf-8")  # TOML underscores
+            self.assertIn("switch point (102k)", self.stop("codex", alto, env)["systemMessage"])
+            for ruim in ("_120000", "120000_", "120__000"):
+                (ch / "config.toml").write_text('model_auto_compact_token_limit = %s\n' % ruim, "utf-8")
+                self.assertIsNone(self.stop("codex", alto, env), ruim)
 
 
 class SubagentStop(Limpo):  # scenario 10

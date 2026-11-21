@@ -482,6 +482,21 @@ const vectors = {
         "switch": 180000
       },
       {
+        "name": "settings_window_infinite_ignored",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": {
+          "autoCompactWindow": 1e400
+        },
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
         "name": "settings_window_true_ignored",
         "cli": "claude",
         "model": "claude-opus-4-7",

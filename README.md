@@ -36,7 +36,7 @@ Needs Python 3.9 or newer as `python3`. Optional, Claude Code only: `claude plug
 ## Quickstart
 
 1. Install the core (above) and start a session as usual. The main session now delegates.
-2. When the context grows, type `/relay` (or just `relay`). The model writes the handoff.
+2. When the context grows, type the word `relay` alone as the message (with the band, `/relay` works too). The model writes the handoff.
 3. Type `/clear` (Codex: `/new`). The new session starts with the handoff.
 
 With the band, `/relay` does steps 2 and 3 for you, and `/relay auto` does them by itself at the switch point.

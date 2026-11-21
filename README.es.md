@@ -36,7 +36,7 @@ Necesita Python 3.9 o superior como `python3`. Opcional, solo en Claude Code: `c
 ## Inicio rápido
 
 1. Instala el núcleo (arriba) y abre una sesión como siempre. La sesión principal pasa a delegar.
-2. Cuando el contexto crezca, escribe `/relay` (o solo `relay`). El modelo guarda el traspaso.
+2. Cuando el contexto crezca, escribe la palabra `relay` sola como mensaje (con el band, `/relay` también funciona). El modelo guarda el traspaso.
 3. Escribe `/clear` (en Codex, `/new`). La sesión nueva empieza con el traspaso.
 
 Con el band, `/relay` hace los pasos 2 y 3 por ti, y `/relay auto` los hace solo en el punto de cambio.

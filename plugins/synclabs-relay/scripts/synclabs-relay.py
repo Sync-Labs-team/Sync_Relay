@@ -490,6 +490,8 @@ def _inteiro(v, minimo, maximo=None, texto=True):
         v = int(v.strip()) if re.fullmatch(r"\s*[0-9]{1,12}\s*", v) else None
     elif isinstance(v, bool) or not isinstance(v, (int, float)):
         v = None
+    elif v != v or v in (float("inf"), float("-inf")):  # NaN / Infinity / 1e400 in the JSON: ignored, like the band
+        v = None
     else:
         v = int(v)
     return v if v is not None and v >= minimo and (maximo is None or v <= maximo) else None
@@ -552,9 +554,9 @@ def limite_codex(env, home):
             for linha in f:
                 if linha.lstrip().startswith("["):
                     break
-                m = re.fullmatch(r"\s*model_auto_compact_token_limit\s*=\s*([0-9]+)\s*(#.*)?", linha.rstrip("\r\n"))
+                m = re.fullmatch(r"\s*model_auto_compact_token_limit\s*=\s*([0-9]+(?:_[0-9]+)*)\s*(#.*)?", linha.rstrip("\r\n"))  # TOML: `_` only between digits
                 if m:
-                    return int(m.group(1))
+                    return int(m.group(1).replace("_", ""))
     except (OSError, ValueError):
         pass
     return None

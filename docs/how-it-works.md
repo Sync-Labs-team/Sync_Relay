@@ -19,7 +19,7 @@ When a main session starts, resumes, clears or compacts, the plugin injects a ta
 
 ## The handoff
 
-1. `relay` (the whole message, `/` optional) or `/relay` with the band.
+1. `relay` (the whole message; without the band `/relay` is not a command) or `/relay` with the band.
 2. The hook tells the model to write the state to a Markdown file of at most 8,000 characters, in your language: your request, state, decisions, where everything is, what does not carry over by itself, numbered next steps, risks. On Claude Code the model writes it itself; on Codex it delegates the write to a subagent that inherits the context.
 3. You start the new session: `/clear` in Claude Code, `/new` in Codex. With the band, it does that for you.
 4. The `SessionStart` hook of the new session puts the file in its context.

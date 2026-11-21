@@ -299,5 +299,481 @@
       "english",
       "locale"
     ]
-  ]
+  ],
+  "compaction_cases": {
+    "_comment": "Switch point = floor + min(D, 0.8 x (C - floor)); D = threshold (default 150000); if C - floor <= 0, floor + D. C (Claude): env CLAUDE_CODE_AUTO_COMPACT_WINDOW (>=100000), else settings autoCompactWindow (number >=100000), else the model window (1M ids: [1m] suffix, Fable, Sonnet >=5, Haiku >=5.5, Opus >=4.7 -> 967000; else 200000; CLAUDE_CODE_DISABLE_1M_CONTEXT=1 forces 200000), then x CLAUDE_AUTOCOMPACT_PCT_OVERRIDE/100 (1 to 100). C (Codex): model_auto_compact_token_limit from config.toml, else none. origem: env, settings, model, codex-config, none; '+pct' when the override applied. The band (Claude only) skips the codex cases.",
+    "cases": [
+      {
+        "name": "claude_1m_opus_4_7",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "claude_200k_sonnet_4_6",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "codex_limit_120k",
+        "cli": "codex",
+        "model": null,
+        "env": {},
+        "settings": null,
+        "codex_limit": 120000,
+        "threshold": null,
+        "floor": 30000,
+        "c": 120000,
+        "origem": "codex-config",
+        "switch": 102000
+      },
+      {
+        "name": "codex_no_limit",
+        "cli": "codex",
+        "model": null,
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": null,
+        "origem": "none",
+        "switch": 180000
+      },
+      {
+        "name": "threshold_300k_claude_200k",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": 300000,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "threshold_100k_claude_1m",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": 100000,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 130000
+      },
+      {
+        "name": "env_window_500k",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {
+          "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "500000"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 500000,
+        "origem": "env",
+        "switch": 180000
+      },
+      {
+        "name": "env_window_below_100k_ignored",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {
+          "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "99999"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "env_window_junk_ignored",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {
+          "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "abc"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "env_beats_settings",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {
+          "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"
+        },
+        "settings": {
+          "autoCompactWindow": 150000
+        },
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 300000,
+        "origem": "env",
+        "switch": 180000
+      },
+      {
+        "name": "settings_window_150k",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": {
+          "autoCompactWindow": 150000
+        },
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 150000,
+        "origem": "settings",
+        "switch": 126000
+      },
+      {
+        "name": "settings_window_not_a_number_ignored",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": {
+          "autoCompactWindow": "150000"
+        },
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "settings_window_infinite_ignored",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": {
+          "autoCompactWindow": 1e400
+        },
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "settings_window_true_ignored",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {},
+        "settings": {
+          "autoCompactWindow": true
+        },
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "pct_override_10",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {
+          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "10"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 96700,
+        "origem": "model+pct",
+        "switch": 83360
+      },
+      {
+        "name": "pct_override_0_ignored",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {
+          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "0"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "pct_override_101_ignored",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {
+          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "101"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "pct_override_on_env_window",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {
+          "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000",
+          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 150000,
+        "origem": "env+pct",
+        "switch": 126000
+      },
+      {
+        "name": "disable_1m_forces_200k",
+        "cli": "claude",
+        "model": "claude-opus-4-7",
+        "env": {
+          "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
+        },
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "suffix_1m",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6[1m]",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "fable_1m",
+        "cli": "claude",
+        "model": "claude-fable-1",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "sonnet_5_1m",
+        "cli": "claude",
+        "model": "claude-sonnet-5",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "sonnet_5_5_1m",
+        "cli": "claude",
+        "model": "claude-sonnet-5-5",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "haiku_5_5_1m",
+        "cli": "claude",
+        "model": "claude-haiku-5-5",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "haiku_5_4_200k",
+        "cli": "claude",
+        "model": "claude-haiku-5-4",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "haiku_4_5_200k",
+        "cli": "claude",
+        "model": "claude-haiku-4-5-20251001",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "opus_4_6_200k",
+        "cli": "claude",
+        "model": "claude-opus-4-6",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "opus_4_8_dated_1m",
+        "cli": "claude",
+        "model": "claude-opus-4-8-20270101",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "opus_5_1m",
+        "cli": "claude",
+        "model": "claude-opus-5",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 967000,
+        "origem": "model",
+        "switch": 180000
+      },
+      {
+        "name": "sonnet_4_dated_200k",
+        "cli": "claude",
+        "model": "claude-sonnet-4-20250514",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "unknown_model_200k",
+        "cli": "claude",
+        "model": "some-other-model",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "no_model_200k",
+        "cli": "claude",
+        "model": null,
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 30000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 166000
+      },
+      {
+        "name": "compaction_below_floor_no_cap",
+        "cli": "claude",
+        "model": "claude-sonnet-4-6",
+        "env": {},
+        "settings": null,
+        "codex_limit": null,
+        "threshold": null,
+        "floor": 250000,
+        "c": 200000,
+        "origem": "model",
+        "switch": 400000
+      },
+      {
+        "name": "codex_limit_below_floor_no_cap",
+        "cli": "codex",
+        "model": null,
+        "env": {},
+        "settings": null,
+        "codex_limit": 20000,
+        "threshold": null,
+        "floor": 30000,
+        "c": 20000,
+        "origem": "codex-config",
+        "switch": 180000
+      }
+    ]
+  }
 }

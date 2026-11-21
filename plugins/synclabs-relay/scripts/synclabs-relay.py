@@ -4,11 +4,12 @@ The main interactive session only orchestrates; work goes to subagents. Standard
 
 - PreToolUse: denies work tools in the main interactive session (mode `enforce`). Subagents (`agent_id`),
   automation (`claude -p`, `codex exec`) and orchestration tools pass.
-- UserPromptSubmit: short reminder per message; the word `handoff` (or `passagem`) asks for the handoff file.
+- UserPromptSubmit: short reminder per message; the word `relay` (whole message, `/` optional) asks for the handoff file.
 - SessionStart: routing table (from config) for the main session; delivers a pending handoff to a new session
   (`startup`/`clear`), the only one that does in both CLIs (the band mod only triggers the switch); deletes handoff
   files older than 7 days.
-- Stop: warns when the context grew `threshold_tokens` above the floor of the session itself.
+- Stop: warns at the switch point, floor + min(D, 0.8 x (C - floor)): D = `threshold_tokens` (default 150k), C = the CLI's
+  auto-compaction point (see compactacao); not while a subagent runs.
 - SubagentStop: asks once for a shorter report when it passes `report_max_chars`.
 
 Config: see README (file `synclabs-relay/config.json`; env SYNCLABS_RELAY_MODE / _LANG / _CONFIG win over it).
@@ -32,6 +33,8 @@ LIVRES = {
     "ReadNotifications", "ScheduleWakeup", "SendUserFile", "PushNotification", "EnterPlanMode",
     "ExitPlanMode", "CronCreate", "CronList", "CronDelete", "EndConversation", "TodoWrite",
     "SendUserMessage", "TeamCreate",
+    "REPL",  # Code Mode wrapper: each inner tools.X() call fires its own PreToolUse with the real name, still judged
+    "Poll",  # Code Mode: waits for the result of the REPL or of a background agent
     # Codex
     "spawn_agent", "wait_agent", "wait", "send_input", "send_message", "followup_task", "list_agents",
     "interrupt_agent", "close_agent", "resume_agent", "update_plan", "request_user_input",
@@ -46,7 +49,8 @@ def _camada(claude, codex):
 PADRAO = {
     "mode": "enforce",
     "lang": "auto",
-    "threshold_tokens": 150000,
+    "threshold_tokens": 150000,  # optional in the file: absent = this value
+    "button": True,  # read by the band only (fixed button above the prompt); here so the shared file stays valid
     "stop_warning": True,
     "report_max_chars": 4000,
     "handoff_dir": "",
@@ -67,7 +71,7 @@ PADRAO = {
 }
 MODOS = ("enforce", "remind", "off")
 EVENTOS = {"PreToolUse", "UserPromptSubmit", "SessionStart", "Stop", "SubagentStop"}
-PALAVRAS_HANDOFF = {"handoff", "passagem"}
+PALAVRAS_HANDOFF = {"relay"}
 INICIO_HANDOFF = {"startup", "clear"}  # fork, resume and compact never consume a handoff
 VIDA_ARQUIVO = 7 * 86400
 # slug() is [a-z0-9-] and never starts with '-': names have no separator and no other dot
@@ -78,6 +82,10 @@ VALIDADE_PERMISSAO = 10 * 60  # the marker is fresh only while the handoff it as
 VALIDADE_HANDOFF = 30 * 60  # asked and switched right away; older belongs to another conversation
 LIMITE_CONTEXTO = 9000  # hooks doc: additionalContext over 10,000 chars becomes a file path + 2,000-char preview
 MAX_HANDOFF = 8000
+JANELA_200K = 200000
+JANELA_1M = 967000  # auto-compaction point of a 1M window (doc: model-config)
+JANELA_MIN = 100000  # CLAUDE_CODE_AUTO_COMPACT_WINDOW and autoCompactWindow: the doc's minimum
+MIN_1M = {"opus": (4, 7), "sonnet": (5, 0), "haiku": (5, 5)}  # first version with the 1M window by default
 
 
 # ---------- config ----------
@@ -463,6 +471,108 @@ def tokens_e_piso(transcript, cli):
     return f(reversed(fim)), f(ini)
 
 
+# ---------- switch point ----------
+def janela_1m(modelo):
+    """1M window by default: `[1m]` suffix, Fable, Sonnet >= 5, Haiku >= 5.5, Opus >= 4.7 (doc: model-config).
+    Unknown id: False (200K, the conservative side). The band repeats this: tests/vectors/paths.json locks both."""
+    m = (modelo or "").lower()
+    if "[1m]" in m or "fable" in m:
+        return True
+    r = re.search(r"(opus|sonnet|haiku)-(\d{1,2})(?:[-.](\d{1,2}))?(?![0-9])", m)  # a date suffix is not a minor
+    return bool(r) and (int(r.group(2)), int(r.group(3) or 0)) >= MIN_1M[r.group(1)]
+
+
+def _inteiro(v, minimo, maximo=None, texto=True):
+    """int from a string of digits (texto: env vars) or a number (never a bool), within the limits; else None."""
+    if isinstance(v, str):
+        if not texto:
+            return None
+        v = int(v.strip()) if re.fullmatch(r"\s*[0-9]{1,12}\s*", v) else None
+    elif isinstance(v, bool) or not isinstance(v, (int, float)):
+        v = None
+    elif v != v or v in (float("inf"), float("-inf")):  # NaN / Infinity / 1e400 in the JSON: ignored, like the band
+        v = None
+    else:
+        v = int(v)
+    return v if v is not None and v >= minimo and (maximo is None or v <= maximo) else None
+
+
+def compactacao(cli, modelo, env, settings, codex_limite):
+    """(C, origin): the CLI's auto-compaction point in tokens, or (None, 'none'). Origin: env, settings, model,
+    codex-config, none; '+pct' when CLAUDE_AUTOCOMPACT_PCT_OVERRIDE (1-100, it only lowers) applied.
+    Claude: env CLAUDE_CODE_AUTO_COMPACT_WINDOW, else settings `autoCompactWindow`, else the model's window
+    (CLAUDE_CODE_DISABLE_1M_CONTEXT=1 forces 200K). Codex: `model_auto_compact_token_limit` of config.toml."""
+    if cli == "codex":
+        return (codex_limite, "codex-config") if codex_limite else (None, "none")
+    c, origem = _inteiro(env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"), JANELA_MIN), "env"
+    if c is None:
+        c, origem = _inteiro((settings or {}).get("autoCompactWindow") if isinstance(settings, dict) else None, JANELA_MIN, texto=False), "settings"
+    if c is None:
+        grande = janela_1m(modelo) and env.get("CLAUDE_CODE_DISABLE_1M_CONTEXT") != "1"
+        c, origem = JANELA_1M if grande else JANELA_200K, "model"
+    pct = _inteiro(env.get("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"), 1, 100)
+    return (c * pct // 100, origem + "+pct") if pct else (c, origem)
+
+
+def ponto_de_troca(piso, d, c):
+    """Context (tokens) where the switch is due: floor + min(D, 0.8 x (C - floor)); without a usable C: floor + D."""
+    if c is None or c - piso <= 0:
+        return piso + d
+    return piso + min(d, (c - piso) * 8 // 10)
+
+
+def modelo_do_transcript(transcript):
+    """Model id of the last assistant response of the main chain (Claude transcript); None if unreadable."""
+    linhas = _ler_fim(transcript)
+    for linha in reversed(linhas or ()):
+        if '"assistant"' not in linha:
+            continue
+        try:
+            j = json.loads(linha)
+            m = j["message"]["model"]
+        except (ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if j.get("type") == "assistant" and not j.get("isSidechain") and isinstance(m, str) and not m.startswith("<"):
+            return m
+    return None
+
+
+def _json_dict(caminho):
+    try:
+        with open(caminho, encoding="utf-8-sig") as f:
+            j = json.load(f)
+        return j if isinstance(j, dict) else None
+    except (OSError, ValueError, RecursionError):
+        return None
+
+
+def limite_codex(env, home):
+    """`model_auto_compact_token_limit = <number>` of <CODEX_HOME or ~/.codex>/config.toml (top level only, one line).
+    shortcut: not a TOML parser (no inline tables, no multi-line); use tomllib when the floor is Python 3.11."""
+    try:
+        with open(os.path.join(env.get("CODEX_HOME") or os.path.join(home, ".codex"), "config.toml"), encoding="utf-8-sig") as f:
+            for linha in f:
+                if linha.lstrip().startswith("["):
+                    break
+                m = re.fullmatch(r"\s*model_auto_compact_token_limit\s*=\s*([0-9]+(?:_[0-9]+)*)\s*(#.*)?", linha.rstrip("\r\n"))  # TOML: `_` only between digits
+                if m:
+                    return int(m.group(1).replace("_", ""))
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def troca_da_sessao(d, cli, cfg, env, home, piso):
+    """Switch point of this session (see ponto_de_troca); reads the model from the transcript, the CLI's own config
+    files from CLAUDE_CONFIG_DIR / CODEX_HOME (or ~/.claude, ~/.codex). Anything unreadable is ignored."""
+    if cli == "codex":
+        c, _ = compactacao(cli, None, env, None, limite_codex(env, home))
+    else:
+        settings = _json_dict(os.path.join(env.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude"), "settings.json"))
+        c, _ = compactacao(cli, modelo_do_transcript(d.get("transcript_path")), env, settings, None)
+    return ponto_de_troca(piso, cfg["threshold_tokens"], c)
+
+
 # ---------- output ----------
 def tabela(cfg, t, cli):
     claude = cli == "claude"
@@ -491,7 +601,7 @@ def marcador(pasta, env):
 
 
 def handoff_pendente(d, cli, pasta, env):
-    """(text, used-file) of the handoff this new session takes, already claimed, or None.
+    """(text, used-file, file, marker) of the handoff this new session takes, already claimed, or None.
     Claude /clear: the file this same process asked for, else the Codex one of the cwd (<slug>.md). Claude startup:
     the Codex one. Codex: the newest of the cwd, Claude's per-session files included (switching CLI).
     The claim is an atomic rename BEFORE anything is printed: two sessions starting together never get the same one."""
@@ -501,10 +611,12 @@ def handoff_pendente(d, cli, pasta, env):
     proprio = None
     clear_claude = cli == "claude" and d.get("source") == "clear"
     m = marcador(pasta, env) if clear_claude else None
+    marca = None  # (marker, content, mtime_ns): given back with the file, or the next /clear finds no request
     if m:  # an empty marker = the band canceled the switch: nothing is delivered by PID
         try:
             with open(m, encoding="utf-8") as f:
                 proprio = f.read().strip()
+            marca = (m, proprio, os.stat(m).st_mtime_ns)
             os.remove(m)
         except OSError:
             pass
@@ -539,20 +651,28 @@ def handoff_pendente(d, cli, pasta, env):
             continue
         try:
             with open(usada, encoding="utf-8", errors="replace") as f:
-                return f.read(), usada, arq
+                return f.read(), usada, arq, marca
         except OSError:
-            desfazer(usada, arq)
+            desfazer(usada, arq, marca)
             return None
     return None
 
 
-def desfazer(usada, arq):
-    """Gives a claimed handoff back (it was not delivered). Never overwrites a newer one with the same name."""
+def desfazer(usada, arq, marca=None):
+    """Gives a claimed handoff back (it was not delivered), and the marker that named it, with its age, so the next
+    /clear of this process still finds it. Never overwrites a newer handoff or marker."""
     try:
         if not os.path.lexists(arq):
             os.rename(usada, arq)
     except OSError:
         pass
+    if marca:
+        try:
+            with open(marca[0], "x", encoding="utf-8") as f:
+                f.write(marca[1])
+            os.utime(marca[0], ns=(marca[2], marca[2]))
+        except OSError:
+            pass
 
 
 def _u16(texto):
@@ -575,7 +695,7 @@ def contexto(evento, texto):
 
 
 def processar(d, cli, env, home, nt):
-    """(hook output or None, (used-file, file) to give back if the output cannot be written, or None)."""
+    """(hook output or None, (used-file, file, marker) to give back if the output cannot be written, or None)."""
     evento = d.get("hook_event_name")
     if evento not in EVENTOS:
         return None, None
@@ -632,7 +752,7 @@ def processar(d, cli, env, home, nt):
         tab = tabela(cfg, t, cli) if lembra else ""
         pend, mover, bloco = handoff_pendente(d, cli, pasta, env), None, ""
         if pend:  # the handoff first: it is never cut for the table (over 10k Claude Code delivers a path and a preview)
-            texto, usada, arq = pend
+            texto, usada, arq, marca = pend
             try:
                 cab = t("handoff_injected", file=usada)
                 fim = t("handoff_cut", file=usada)
@@ -641,9 +761,9 @@ def processar(d, cli, env, home, nt):
                     texto = _cortar(texto, resto - _u16(fim)) + fim
                 bloco = cab + texto
             except Exception:  # claimed but nothing will be printed: give it back, fail open
-                desfazer(usada, arq)
+                desfazer(usada, arq, marca)
                 return None, None
-            mover = (usada, arq)
+            mover = (usada, arq, marca)
         sobra = LIMITE_CONTEXTO - _u16(bloco) - (2 if bloco else 0)  # the routing table gets what is left
         if _u16(tab) > sobra:
             corte = t("routing_cut")
@@ -651,11 +771,17 @@ def processar(d, cli, env, home, nt):
             tab = (_cortar(tab, n).rpartition("\n")[0] + "\n" + corte).lstrip("\n") if n >= 0 else ""
         partes = [x for x in (tab, bloco) if x]
         return _com_aviso(contexto(evento, "\n\n".join(partes)) if partes else None, aviso), mover
-    if evento == "Stop" and not d.get("stop_hook_active") and (cli != "claude" or cfg["stop_warning"]):
+    # a subagent still running (Claude Stop input `background_tasks`): its report would land in the new session out of
+    # context, so warn at the turn that brings it; shells never hold the warning (a server may never end)
+    tarefas = d.get("background_tasks") if isinstance(d.get("background_tasks"), list) else []
+    sub_vivo = any(isinstance(x, dict) and x.get("type") == "subagent" for x in tarefas)
+    if evento == "Stop" and not d.get("stop_hook_active") and not sub_vivo and (cli != "claude" or cfg["stop_warning"]):
         n, piso = tokens_e_piso(d.get("transcript_path"), cli)
-        if n and piso is not None and n - piso >= cfg["threshold_tokens"]:
-            return {"systemMessage": t("stop_warning", total=n // 1000, extra=(n - piso) // 1000,
-                                       limit=cfg["threshold_tokens"] // 1000)}, None
+        if n and piso is not None:
+            troca = troca_da_sessao(d, cli, cfg, env, home, piso)
+            if n >= troca:
+                return {"systemMessage": t("stop_warning", total=n // 1000, extra=(n - piso) // 1000,
+                                           limit=troca // 1000)}, None
     if evento == "SubagentStop" and trava and not d.get("stop_hook_active"):
         msg = d.get("last_assistant_message")
         limite = cfg["report_max_chars"]

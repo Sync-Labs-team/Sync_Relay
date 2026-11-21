@@ -12,8 +12,11 @@ const fase = atom({ plugin: 'synclabs-relay-band', key: 'fase' } as const, 'ocio
 const auto = atom({ plugin: 'synclabs-relay-band', key: 'auto' } as const, false)
 // Apresentacao unica da primeira instalacao: vista (persiste em $.store, chave 'apresentado'). O padrao do auto e desligado.
 const apresentado = atom({ plugin: 'synclabs-relay-band', key: 'apresentado' } as const, false)
-// Botao fixo "Passagem auto" acima do campo (sem faixa): visivel por padrao; /handoff botao alterna (store, chave 'botao').
+// Botao fixo "Sync_Relay auto" acima do campo (sem faixa): /relay button grava no $.store (chave 'botao') e vale em todas as
+// sessoes; sem nada no store vale a chave `button` do config.json (true se faltar).
 const botaoFixo = atom({ plugin: 'synclabs-relay-band', key: 'botao' } as const, true)
+// ponto de auto-compactacao da CLI (C) e de onde veio; medido a cada turno (modelo, env e settings podem mudar).
+const compact = atom({ plugin: 'synclabs-relay-band', key: 'compact' } as const, null)
 const interativo = atom({ plugin: 'synclabs-relay-band', key: 'interativo' } as const, false)
 const restante = atom({ plugin: 'synclabs-relay-band', key: 'restante' } as const, 0)
 // A espera por agentes passou de 60 s: a faixa oferece "Trocar mesmo assim".
@@ -21,8 +24,8 @@ const demorou = atom({ plugin: 'synclabs-relay-band', key: 'demorou' } as const,
 // O $.state e por sessao (id): depois do /clear a sessao nova nasce com os padroes. Ate o iniciar() dela, nada e desenhado.
 const carregado = atom({ plugin: 'synclabs-relay-band', key: 'carregado' } as const, false)
 
-// Default switch point: tokens ABOVE the session baseline (piso). Overridden by config `threshold_tokens`, by
-// /handoff threshold (store, key 'limiar') and, for one session, by SYNCLABS_RELAY_BAND_THRESHOLD.
+// D of the switch rule (tokens above the session baseline, capped at 80% of the way to compaction: see pontoDeTroca).
+// Overridden by config `threshold_tokens` and, for one session, by SYNCLABS_RELAY_BAND_THRESHOLD.
 export const LIMIAR_ACIMA = 150_000
 const LIMIAR_MIN = 5_000
 const LIMIAR_MAX = 900_000
@@ -60,6 +63,8 @@ let forcado = false
 let avisouSemPasta = false
 // A sessao e interativa? Do modulo, porque o $.state zera no /clear e o motor nao dispara session.start nele.
 let interativoModulo = false
+// Toast "passagem aberta": decidido no session.end, mostrado so na sessao nova (no session.end o /clear redesenha a tela e o apaga).
+let toastAbertaPendente = false
 
 /** FNV-1a 32 bits over the UTF-8 bytes (a lone surrogate is '?', like Python's errors="replace"), 8 lowercase hex digits. */
 function fnv1a(texto: string): string {
@@ -107,13 +112,67 @@ export function deveAvisar(
   adiadoEm: number | null,
   f: PassagemFase,
   lim: number = LIMIAR_ACIMA,
+  c: number | null = null,
 ): boolean {
-  if (f !== 'ocioso' || n === null || pisoEm === null || n - pisoEm < lim) return false
+  if (f !== 'ocioso' || n === null || pisoEm === null || n < pontoDeTroca(pisoEm, lim, c)) return false
   return adiadoEm === null || n >= adiadoEm + DE_NOVO
 }
 
 type Lang = 'en' | 'pt-BR'
 type Env = Record<string, string | undefined>
+
+// ---- switch point (same rule as the core script: tests/vectors/paths.json locks both)
+const JANELA_200K = 200_000
+const JANELA_1M = 967_000 // auto-compaction point of a 1M window (doc: model-config)
+const JANELA_MIN = 100_000 // CLAUDE_CODE_AUTO_COMPACT_WINDOW and autoCompactWindow: the doc's minimum
+const MIN_1M: Record<string, [number, number]> = { opus: [4, 7], sonnet: [5, 0], haiku: [5, 5] } // first version with the 1M window by default
+const FAMILIA = /(opus|sonnet|haiku)-(\d{1,2})(?:[-.](\d{1,2}))?(?![0-9])/ // a date suffix is not a minor
+
+/** 1M window by default: `[1m]` suffix, Fable, Sonnet >= 5, Haiku >= 5.5, Opus >= 4.7. Unknown id: false (200K, conservative). */
+export function janela1m(modelo: string | undefined): boolean {
+  const m = (modelo ?? '').toLowerCase()
+  if (m.includes('[1m]') || m.includes('fable')) return true
+  const r = FAMILIA.exec(m)
+  if (r === null) return false
+  const [maior, menor] = MIN_1M[r[1]]
+  const v = [Number(r[2]), Number(r[3] ?? 0)]
+  return v[0] > maior || (v[0] === maior && v[1] >= menor)
+}
+
+/** Integer within the limits, or null. A string counts only when `texto` (env vars); never a boolean. */
+function inteiro(v: unknown, min: number, max = Infinity, texto = true): number | null {
+  const n = typeof v === 'string' ? (texto && /^\s*[0-9]{1,12}\s*$/.test(v) ? Number(v.trim()) : null) : typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : null
+  return n !== null && n >= min && n <= max ? n : null
+}
+
+/**
+ * Claude Code's auto-compaction point C and where it came from (origem: env, settings, model; '+pct' when
+ * CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, 1 to 100, lowered it): env CLAUDE_CODE_AUTO_COMPACT_WINDOW, else settings
+ * `autoCompactWindow`, else the model's window (CLAUDE_CODE_DISABLE_1M_CONTEXT=1 forces 200K). The window the API
+ * reports (janelaApi) upgrades only a model id the table does not know (an alias such as "opus").
+ */
+export function compactacao(modelo: string | undefined, env: Env, settings: unknown, janelaApi?: number): { c: number; origem: string } {
+  let c = inteiro(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, JANELA_MIN)
+  let origem = 'env'
+  if (c === null) {
+    c = inteiro(settings !== null && typeof settings === 'object' ? (settings as Record<string, unknown>).autoCompactWindow : undefined, JANELA_MIN, Infinity, false)
+    origem = 'settings'
+  }
+  if (c === null) {
+    const m = (modelo ?? '').toLowerCase()
+    const conhecido = FAMILIA.test(m) || m.includes('fable') || m.includes('[1m]')
+    const grande = env.CLAUDE_CODE_DISABLE_1M_CONTEXT !== '1' && (janela1m(modelo) || (!conhecido && (janelaApi ?? 0) >= 1_000_000))
+    c = grande ? JANELA_1M : JANELA_200K
+    origem = 'model'
+  }
+  const pct = inteiro(env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, 1, 100)
+  return pct === null ? { c, origem } : { c: Math.floor((c * pct) / 100), origem: origem + '+pct' }
+}
+
+/** Context (tokens) where the switch is due: floor + min(D, 0.8 x (C - floor)); without a usable C: floor + D. */
+export function pontoDeTroca(piso: number, d: number, c: number | null): number {
+  return c === null || c - piso <= 0 ? piso + d : piso + Math.min(d, Math.floor(((c - piso) * 8) / 10))
+}
 
 /** Default handoff folder (contract: tests/vectors/paths.json). null when there is no base to build it from. */
 export function defaultHandoffDir(windows: boolean, env: Env, home: string | null): string | null {
@@ -143,7 +202,8 @@ export function resolveLang(envLang: string | undefined, cfgLang: string | undef
   return langConhecido(envLang) ?? langConhecido(cfgLang) ?? (locale.toLowerCase().startsWith('pt') ? 'pt-BR' : 'en')
 }
 
-type Config = { lang?: string; threshold?: number; dir?: string }
+type Config = { lang?: string; threshold?: number; dir?: string; mode?: string; button?: boolean; auto?: boolean }
+const MODOS = ['enforce', 'remind', 'off']
 
 /**
  * handoff_dir, same rule as the core script (tests/vectors/paths.json): '~' at the start expands to home; Windows needs
@@ -167,6 +227,9 @@ export function parseConfig(txt: string, windows = false, home: string | null = 
     if (o === null || typeof o !== 'object' || Array.isArray(o)) return {}
     const c: Config = {}
     if (typeof o.lang === 'string') c.lang = o.lang
+    if (typeof o.mode === 'string' && MODOS.includes(o.mode)) c.mode = o.mode
+    if (typeof o.button === 'boolean') c.button = o.button
+    if (typeof o.auto === 'boolean') c.auto = o.auto
     if (Number.isInteger(o.threshold_tokens) && o.threshold_tokens >= LIMIAR_MIN && o.threshold_tokens <= LIMIAR_MAX) c.threshold = o.threshold_tokens
     // an absolute path only: a relative one would write into whatever the cwd is (rule in pastaConfigurada)
     const dir = typeof o.handoff_dir === 'string' ? pastaConfigurada(o.handoff_dir, windows, home) : undefined
@@ -189,7 +252,7 @@ async function ambiente($: Engine): Promise<Ambiente> {
   const windows = info.platform === 'windows'
   // $.env.get needs a literal name at each call site (the engine lists the variables a module reads).
   const g = (v: string | undefined | Promise<string | undefined>): Promise<string | undefined> => Promise.resolve(v).then(x => x || undefined, () => undefined)
-  const [LOCALAPPDATA, APPDATA, XDG_STATE_HOME, XDG_CONFIG_HOME, HOME, USERPROFILE, SYNCLABS_RELAY_CONFIG, SYNCLABS_RELAY_LANG] = await Promise.all([
+  const [LOCALAPPDATA, APPDATA, XDG_STATE_HOME, XDG_CONFIG_HOME, HOME, USERPROFILE, SYNCLABS_RELAY_CONFIG, SYNCLABS_RELAY_LANG, SYNCLABS_RELAY_MODE, CLAUDE_CONFIG_DIR, CLAUDE_CODE_AUTO_COMPACT_WINDOW, CLAUDE_CODE_DISABLE_1M_CONTEXT, CLAUDE_AUTOCOMPACT_PCT_OVERRIDE] = await Promise.all([
     g($.env.get('LOCALAPPDATA')),
     g($.env.get('APPDATA')),
     g($.env.get('XDG_STATE_HOME')),
@@ -198,8 +261,16 @@ async function ambiente($: Engine): Promise<Ambiente> {
     g($.env.get('USERPROFILE')),
     g($.env.get('SYNCLABS_RELAY_CONFIG')),
     g($.env.get('SYNCLABS_RELAY_LANG')),
+    g($.env.get('SYNCLABS_RELAY_MODE')),
+    g($.env.get('CLAUDE_CONFIG_DIR')),
+    g($.env.get('CLAUDE_CODE_AUTO_COMPACT_WINDOW')),
+    g($.env.get('CLAUDE_CODE_DISABLE_1M_CONTEXT')),
+    g($.env.get('CLAUDE_AUTOCOMPACT_PCT_OVERRIDE')),
   ])
-  const env: Env = { LOCALAPPDATA, APPDATA, XDG_STATE_HOME, XDG_CONFIG_HOME, HOME, USERPROFILE, SYNCLABS_RELAY_CONFIG, SYNCLABS_RELAY_LANG }
+  const env: Env = {
+    LOCALAPPDATA, APPDATA, XDG_STATE_HOME, XDG_CONFIG_HOME, HOME, USERPROFILE, SYNCLABS_RELAY_CONFIG, SYNCLABS_RELAY_LANG,
+    SYNCLABS_RELAY_MODE, CLAUDE_CONFIG_DIR, CLAUDE_CODE_AUTO_COMPACT_WINDOW, CLAUDE_CODE_DISABLE_1M_CONTEXT, CLAUDE_AUTOCOMPACT_PCT_OVERRIDE,
+  }
   const dados = await $.process.hookEnv().then(e => e.CLAUDE_PLUGIN_DATA, () => undefined)
   const from = (p: string | undefined, re: RegExp): string | null => re.exec(p ?? '')?.[1] ?? null
   const fromPath =
@@ -229,6 +300,30 @@ async function pastaPassagens($: Engine): Promise<string | null> {
   return dir === null ? null : dir.replaceAll('\\', '/')
 }
 
+/**
+ * C of this session: model from $.session.model() (the main loop's model, as /model shows it; the API gives no other id), the
+ * window from usage as a hint for an alias, env and settings.json of CLAUDE_CONFIG_DIR (or ~/.claude). Anything unreadable is ignored.
+ */
+async function lerCompactacao($: Engine, janela: number | undefined): Promise<{ c: number; origem: string }> {
+  const amb = await ambiente($).catch((): Ambiente | null => null)
+  const modelo = await Promise.resolve()
+    .then(() => $.session.model())
+    .catch(() => undefined)
+  let settings: unknown = null
+  if (amb) {
+    const sep = amb.windows ? '\\' : '/'
+    const dir = amb.env.CLAUDE_CONFIG_DIR || (amb.home === null ? null : `${amb.home}${sep}.claude`)
+    if (dir) {
+      try {
+        settings = JSON.parse(String(await $.fs.read(`${dir}${sep}settings.json`)).replace(/^\uFEFF/, ''))
+      } catch {
+        // no settings file, or not JSON: the model decides
+      }
+    }
+  }
+  return compactacao(modelo || undefined, amb?.env ?? {}, settings, janela)
+}
+
 
 // User-visible text. pt-BR is the original wording; a missing key falls back to en.
 const MSG = {
@@ -236,25 +331,35 @@ const MSG = {
     ready: 'Handoff saved. Type /clear to open the new session with it.',
     postponed: 'Switch postponed: you sent a message',
     submitFail: "Couldn't request the handoff; try again",
-    notWritten: 'The handoff was not written; the session continues. Click again or type /handoff.',
+    notWritten: 'The handoff was not written; the session continues. Click again or type /relay.',
     noFolder: 'handoff: could not find the user folder',
     clearRefused: 'handoff: /clear refused ({0}); handoff at {1}',
-    canceledAutoOff: 'Switch canceled and auto turned off. To turn it back on: /handoff auto{0}',
+    canceledAutoOff: 'Switch canceled and auto turned off. To turn it back on: /relay auto{0}',
     autoOn: 'Automatic switch on',
     autoOff: 'Automatic switch off',
     buttonShown: 'Button visible.',
-    buttonHidden: 'Button hidden. To show it again: /handoff button.',
+    buttonHidden: 'Button hidden. To show it again: /relay button.',
     thisSession: ' (this session only (SYNCLABS_RELAY_BAND_*))',
     canceledKeep: 'Switch canceled; the handoff stays at {0}',
     opened: 'Handoff saved; new session opened.',
-    statusName: 'handoff',
-    statusNameAuto: 'handoff auto',
-    switching: 'handoff · switching…',
+    statusLine: 'Sync_Relay · auto {0} · {1}',
+    statusProgress: '{0}k of {1}k',
+    switching: 'switching…',
     measuring: 'measuring',
-    cmdDescription: 'Writes this session\'s handoff and opens a new one with it. "/handoff auto" turns the automatic switch on or off; "/handoff button" hides or shows the button; "/handoff threshold" shows or sets the limit.',
-    invalid: 'Invalid value: use {0} to {1} (e.g. 150k or 150000) or "default".',
-    threshold: 'Threshold: +{0} above the baseline{1}',
-    usage: 'Usage: /handoff (switch now), /handoff auto (turn the automatic mode on or off), /handoff button (hide or show the button) or /handoff threshold [Nk|default].',
+    cmdDescription: 'Writes this session\'s handoff and opens a new one with it. "/relay auto" turns the automatic switch on or off; "/relay status" shows the state; "/relay button" hides or shows the button.',
+    usage: 'Usage: /relay (switch now), /relay auto (turn the automatic switch on or off), /relay status (show the state) or /relay button (hide or show the button).',
+    status: 'Lock: {0} · auto: {1} · context: {2} · switch at {3} · handoffs: {4} · button: {5}',
+    buttonVisible: 'visible',
+    buttonHiddenWord: 'hidden',
+    statusSwitch: '{0}k = floor {1}k + {2}k (compaction at {3}k: {4})',
+    statusSwitchCapped: '{0}k = floor {1}k + {2}k (80% of the way to compaction at {3}k: {4})',
+    statusTokens: '{0}k tokens',
+    on: 'on',
+    off: 'off',
+    origEnv: 'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
+    origSettings: 'autoCompactWindow in settings.json',
+    origModel: 'model default',
+    origPct: ', lowered by CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
     alreadySaved: 'The handoff is already saved at {0}. Type /clear to open the new session with it.',
     alreadyWriting: 'Already writing the handoff.',
     alreadyWaiting: 'Already waiting for the agents to finish before writing the handoff.',
@@ -273,12 +378,12 @@ const MSG = {
     intro: 'Session handoff: when the context grows {0}k above the start of the session, the band writes a handoff and opens a new session with it.',
     introAutoOn: 'Automatic on: switches by itself after {0} s, and you can cancel. Off: you get the warning and decide.',
     introAutoOff: 'Automatic off: you get the warning and decide. On: switches by itself after {0} s, and you can cancel.',
-    introHow: 'On/off: button above the input or /handoff auto; /handoff button hides the button.',
+    introHow: 'On/off: button above the input or /relay auto; /relay button hides the button.',
     gotIt: 'Got it',
     turnAutoOff: 'Turn auto off',
     turnAutoOn: 'Turn auto on',
-    autoButtonOn: 'Auto handoff: on',
-    autoButtonOff: 'Auto handoff: off',
+    autoButtonOn: 'Sync_Relay auto: on',
+    autoButtonOff: 'Sync_Relay auto: off',
     banner: 'Context at {0}k tokens (+{1}k above the start of the session): past the switch point.',
     switchSession: 'Switch session',
     later: 'Later',
@@ -287,25 +392,35 @@ const MSG = {
     ready: 'Passagem gravada. Digite /clear para abrir a sessão nova já com ela.',
     postponed: 'Troca adiada: você mandou uma mensagem',
     submitFail: 'Não consegui pedir a passagem; tente de novo',
-    notWritten: 'A passagem não foi gravada; a sessão continua. Clique de novo ou digite /handoff.',
+    notWritten: 'A passagem não foi gravada; a sessão continua. Clique de novo ou digite /relay.',
     noFolder: 'passagem: não achei a pasta do usuário',
     clearRefused: 'passagem: /clear recusado ({0}); passagem em {1}',
-    canceledAutoOff: 'Troca cancelada e automático desligado. Para religar: /handoff auto{0}',
+    canceledAutoOff: 'Troca cancelada e automático desligado. Para religar: /relay auto{0}',
     autoOn: 'Troca automática ligada',
     autoOff: 'Troca automática desligada',
     buttonShown: 'Botão visível.',
-    buttonHidden: 'Botão oculto. Para mostrar de novo: /handoff botao.',
+    buttonHidden: 'Botão oculto. Para mostrar de novo: /relay button.',
     thisSession: ' (só nesta sessão (SYNCLABS_RELAY_BAND_*))',
     canceledKeep: 'Troca cancelada; a passagem continua em {0}',
     opened: 'Passagem gravada; sessão nova aberta.',
-    statusName: 'passagem',
-    statusNameAuto: 'passagem auto',
-    switching: 'passagem · trocando…',
+    statusLine: 'Sync_Relay · auto {0} · {1}',
+    statusProgress: '{0}k de {1}k',
+    switching: 'trocando…',
     measuring: 'medindo',
-    cmdDescription: 'Grava a passagem desta sessão e abre uma nova já com ela. "/handoff auto" liga ou desliga a troca automática; "/handoff botao" esconde ou mostra o botão; "/handoff limiar" mostra ou muda o limite.',
-    invalid: 'Valor inválido: use de {0} a {1} (ex.: 150k ou 150000) ou "padrao".',
-    threshold: 'Limiar: +{0} acima do piso{1}',
-    usage: 'Uso: /handoff (troca agora), /handoff auto (liga ou desliga o modo automático), /handoff botao (esconde ou mostra o botão) ou /handoff limiar [N k|padrao].',
+    cmdDescription: 'Grava a passagem desta sessão e abre uma nova já com ela. "/relay auto" liga ou desliga a troca automática; "/relay status" mostra o estado; "/relay button" esconde ou mostra o botão.',
+    usage: 'Uso: /relay (troca agora), /relay auto (liga ou desliga a troca automática), /relay status (mostra o estado) ou /relay button (esconde ou mostra o botão).',
+    status: 'Trava: {0} · auto: {1} · contexto: {2} · troca em {3} · passagens: {4} · botão: {5}',
+    buttonVisible: 'visível',
+    buttonHiddenWord: 'oculto',
+    statusSwitch: '{0}k = piso {1}k + {2}k (compactação em {3}k: {4})',
+    statusSwitchCapped: '{0}k = piso {1}k + {2}k (80% do caminho até a compactação em {3}k: {4})',
+    statusTokens: '{0}k tokens',
+    on: 'ligado',
+    off: 'desligado',
+    origEnv: 'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
+    origSettings: 'autoCompactWindow no settings.json',
+    origModel: 'padrão do modelo',
+    origPct: ', reduzido por CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
     alreadySaved: 'A passagem já está gravada em {0}. Digite /clear para abrir a sessão nova com ela.',
     alreadyWriting: 'Já estou gravando a passagem.',
     alreadyWaiting: 'Já estou aguardando os agentes terminarem para gravar a passagem.',
@@ -324,12 +439,12 @@ const MSG = {
     intro: 'Passagem de sessão: quando o contexto passa {0}k acima do início da sessão, o mod grava uma passagem e abre uma sessão nova com ela.',
     introAutoOn: 'Automático ligado: troca sozinho depois de {0} s, e dá para cancelar. Desligado: você recebe o aviso e decide.',
     introAutoOff: 'Automático desligado: você recebe o aviso e decide. Ligado: troca sozinho depois de {0} s, e dá para cancelar.',
-    introHow: 'Liga/desliga: botão acima do campo ou /handoff auto; /handoff botao oculta o botão.',
+    introHow: 'Liga/desliga: botão acima do campo ou /relay auto; /relay button oculta o botão.',
     gotIt: 'Entendi',
     turnAutoOff: 'Desligar automático',
     turnAutoOn: 'Ligar automático',
-    autoButtonOn: 'Passagem auto: ligado',
-    autoButtonOff: 'Passagem auto: desligado',
+    autoButtonOn: 'Sync_Relay auto: ligado',
+    autoButtonOff: 'Sync_Relay auto: desligado',
     banner: 'Contexto em {0}k tokens (+{1}k acima do início da sessão): passou do ponto de troca.',
     switchSession: 'Trocar de sessão',
     later: 'Depois',
@@ -445,8 +560,9 @@ const kt = (v: number): string => `${+(v / 1000).toFixed(1)}k`
 // Override for this session only, for tests: SYNCLABS_RELAY_BAND_THRESHOLD and SYNCLABS_RELAY_BAND_AUTO (1/0) read by $.env.get at session.start. Com
 // valor valido, auto e limiar valem no modulo (sobrevive ao /clear, mesmo processo) e NADA disso vai ao $.store, que e de todas
 // as sessoes. Comando e botao mudam so este objeto.
-let sobre: { auto?: boolean; limiar?: number; botao?: boolean } | null = null
-const soSessao = (): string => (sobre ? tx('thisSession') : '')
+let sobre: { auto?: boolean; limiar?: number } | null = null
+// Aviso "so nesta sessao": so quando o env fixou o auto (o limiar sozinho nao impede o auto de ir ao store).
+const soSessao = (): string => (sobre?.auto !== undefined ? tx('thisSession') : '')
 
 async function lerSobrescrita($: Engine): Promise<void> {
   const [l, a] = await Promise.all([$.env.get('SYNCLABS_RELAY_BAND_THRESHOLD'), $.env.get('SYNCLABS_RELAY_BAND_AUTO')])
@@ -466,17 +582,41 @@ async function lerSobrescrita($: Engine): Promise<void> {
   if (sobre) rastro($, `sobrescrita env limiar=${sobre.limiar ?? '-'} auto=${sobre.auto === undefined ? '-' : sobre.auto ? 1 : 0}`)
 }
 
+/** Text of `/relay status`: lock mode, auto, context, switch point (with its origin) and the handoff folder. */
+async function textoStatus($: Engine): Promise<string> {
+  const [ligado, n, pi, lim, comp, botao, amb, pasta] = await Promise.all([
+    read($, auto), read($, tokens), read($, piso), read($, limiar), read($, compact), read($, botaoFixo),
+    ambiente($).catch((): Ambiente | null => null), pastaPassagens($).catch(() => null),
+  ])
+  const modoEnv = amb?.env.SYNCLABS_RELAY_MODE
+  const modo = modoEnv && ['off', 'remind', 'enforce', 'force'].includes(modoEnv) ? modoEnv : (amb?.config.mode ?? 'enforce')
+  const k = (v: number): number => Math.round(v / 1000)
+  let troca = tx('measuring')
+  if (pi !== null) {
+    const c = comp?.c ?? null
+    const t = pontoDeTroca(pi, lim, c)
+    const [base, pct] = (comp?.origem ?? 'model').split('+')
+    const origem = tx(base === 'env' ? 'origEnv' : base === 'settings' ? 'origSettings' : 'origModel') + (pct ? tx('origPct') : '')
+    troca = tx(c !== null && t - pi < lim ? 'statusSwitchCapped' : 'statusSwitch', k(t), k(pi), k(t - pi), c === null ? 0 : k(c), origem)
+  }
+  return tx('status', modo, ligado ? tx('on') : tx('off'), n === null ? tx('measuring') : tx('statusTokens', k(n)), troca, pasta ?? '-', tx(botao ? 'buttonVisible' : 'buttonHiddenWord'))
+}
+
 /** Linha de status fixa ($.ui.status: uma por plugin, ao lado da statusLine do usuario): auto, quanto falta, ou trocando. */
 async function indicar($: Engine): Promise<void> {
   if (!(await read($, interativo))) return
-  const [f, ligado, n, pi, lim] = await Promise.all([read($, fase), read($, auto), read($, tokens), read($, piso), read($, limiar)])
-  const nome = ligado ? tx('statusNameAuto') : tx('statusName')
+  const [f, ligado, n, pi, lim, comp] = await Promise.all([read($, fase), read($, auto), read($, tokens), read($, piso), read($, limiar), read($, compact)])
+  // The status text always shows (also with the button hidden); first number: growth above the floor, second: distance to the switch point above the floor.
   $.ui.status(
-    f !== 'ocioso'
-      ? tx('switching')
-      : n === null || pi === null
-        ? `${nome} · ${tx('measuring')}`
-        : `${nome} · +${Math.round((n - pi) / 1000)}k/${kt(lim)}`,
+    tx(
+      'statusLine',
+      ligado ? tx('on') : tx('off'),
+      f !== 'ocioso'
+        ? tx('switching')
+        : n === null || pi === null
+          ? tx('measuring')
+          : tx('statusProgress', Math.round((n - pi) / 1000), kt(pontoDeTroca(pi, lim, comp?.c ?? null) - pi).slice(0, -1)),
+    ),
   )
 }
 
@@ -547,7 +687,7 @@ async function mensagemDaPessoa($: Engine): Promise<void> {
 
 // Confere de novo a cada 2 s alem do fim de turno: o status do agente pode atualizar depois do evento.
 const ESPERA_MS = 2000
-// Voo unico: um so envio de "handoff" por troca (botao, Agora, /handoff ou fim da contagem), de comecar a avancar.
+// Voo unico: um so envio de "relay" por troca (botao, Agora, /relay ou fim da contagem), de comecar a avancar.
 let enviando = false
 
 /** So envia se a fase ainda e a esperada (a troca atomica de fase sobrevive a mensagem ou Cancelar durante o await). */
@@ -558,9 +698,9 @@ async function enviar($: Engine, esperada: PassagemFase): Promise<void> {
   await zerarEspera($)
   pedidoEm = agora
   anterior = rodando
-  // The core UserPromptSubmit hook swaps "handoff" for the instructions and the file path.
+  // The core UserPromptSubmit hook swaps "relay" for the instructions and the file path.
   try {
-    await $.prompt.submit({ text: 'handoff', asUser: true })
+    await $.prompt.submit({ text: 'relay', asUser: true })
   } catch {
     if ((await read($, fase)) !== 'escrevendo') return
     await ocioso($, automatica ? await read($, tokens) : undefined, 'submit recusado')
@@ -747,7 +887,7 @@ async function iniciarContagem($: Engine): Promise<void> {
 /** Grava o auto no atomo e no store (com a sobrescrita SYNCLABS_RELAY_BAND_*, so na sessao). */
 async function guardarAuto($: Engine, valor: boolean): Promise<void> {
   await update($, auto, () => valor)
-  if (sobre) sobre.auto = valor
+  if (sobre?.auto !== undefined) sobre.auto = valor
   else await $.store.set('auto', valor)
 }
 
@@ -763,14 +903,13 @@ async function alternarAuto($: Engine, origem: string): Promise<boolean> {
   return novo
 }
 
-/** Esconde ou mostra o botao fixo. Com a sobrescrita SYNCLABS_RELAY_BAND_* ativa vale so na sessao (como o auto e o limiar). */
+/** Esconde ou mostra o botao fixo e lembra a escolha no store (vale em todas as sessoes; o config.json so define o comeco). */
 async function alternarBotao($: Engine, origem: string): Promise<string> {
   const novo = !(await read($, botaoFixo))
   await update($, botaoFixo, () => novo)
-  if (sobre) sobre.botao = novo
-  else await $.store.set('botao', novo)
+  await $.store.set('botao', novo)
   rastro($, `botao ${novo ? 'oculto -> visivel' : 'visivel -> oculto'} (${origem})`)
-  const msg = `${novo ? tx('buttonShown') : tx('buttonHidden')}${soSessao()}`
+  const msg = novo ? tx('buttonShown') : tx('buttonHidden')
   $.ui.toast(msg)
   return msg
 }
@@ -883,18 +1022,21 @@ async function iniciar($: Engine, via: Via, ehInterativo = interativoModulo): Pr
   const ligadoInterativo = via === 'session.start' ? ehInterativo : (await read($, interativo)) || interativoModulo
   interativoModulo = ligadoInterativo
   await update($, interativo, () => ligadoInterativo)
-  const guardado = sobre?.auto ?? (await lerStore('auto')) === true
+  // Language, threshold (D), auto and the button: env (auto) > value the command saved in the store > config.json > default.
+  const amb = await ambiente($).catch((): Ambiente | null => null)
+  const doStore = async (k: string): Promise<boolean | undefined> => {
+    const v = await lerStore(k)
+    return typeof v === 'boolean' ? v : undefined
+  }
+  const guardado = sobre?.auto ?? (await doStore('auto')) ?? amb?.config.auto ?? false
   await update($, auto, () => guardado)
   // Store ilegivel: sem apresentacao de primeira instalacao (ela gravaria no store que nao responde).
   const visto = (await lerStore('apresentado')) === true || falha !== null
   await update($, apresentado, () => visto)
-  const mostrar = sobre?.botao ?? (await lerStore('botao')) !== false
-  await update($, botaoFixo, () => mostrar)
-  // Language and default threshold come from the env and the config file; the store (/handoff threshold) wins over the config.
-  const amb = await ambiente($).catch((): Ambiente | null => null)
+  const botaoGuardado = (await doStore('botao')) ?? amb?.config.button ?? true
+  await update($, botaoFixo, () => botaoGuardado)
   lang = resolveLang(amb?.env.SYNCLABS_RELAY_LANG, amb?.config.lang, Intl.DateTimeFormat().resolvedOptions().locale)
-  const lim = sobre?.limiar ?? (await lerStore('limiar'))
-  const limite = typeof lim === 'number' && lim >= LIMIAR_MIN && lim <= LIMIAR_MAX ? lim : (amb?.config.threshold ?? LIMIAR_ACIMA)
+  const limite = sobre?.limiar ?? amb?.config.threshold ?? LIMIAR_ACIMA
   await update($, limiar, () => limite)
   await update($, carregado, () => true)
   carregouEmFalha = falha !== null
@@ -924,6 +1066,10 @@ function recarregar($: Engine, antigo: string, tentativa = 0): void {
       const id = await $.session.id().catch(() => antigo)
       if (id === antigo && tentativa < 100) return recarregar($, antigo, tentativa + 1)
       await carregar($, 'clear-timer')
+      if (toastAbertaPendente) {
+        toastAbertaPendente = false
+        $.ui.toast(tx('opened'))
+      }
     } catch {
       // carregar nao lanca; o catch cobre o resto (rejeicao nao tratada derrubaria o timer)
     }
@@ -935,33 +1081,20 @@ export const register: Register = on => {
     avisouSemPasta = false
     await lerSobrescrita($)
     await iniciar($, 'session.start', e.isInteractive)
-    await $.command.register({ name: 'handoff', description: tx('cmdDescription') })
+    await $.command.register({ name: 'relay', description: tx('cmdDescription') })
     rastro($, async () => `session.start id=${await $.session.id()} interativo=${e.isInteractive}`)
     return next(e)
   })
 
-  on('command.run', { command: 'handoff' }, async ($, e) => {
+  on('command.run', { command: 'relay' }, async ($, e) => {
     await carregar($, 'comando')
     const arg = e.args.trim().toLowerCase()
     if (arg === 'auto') {
       const novo = await alternarAuto($, 'comando')
       return { text: `${novo ? tx('autoOn') : tx('autoOff')}.${soSessao()}` }
     }
-    if (arg === 'botao' || arg === 'button') return { text: await alternarBotao($, 'comando') }
-    const [cmd, ...resto] = arg.split(/\s+/)
-    if ((cmd === 'limiar' || cmd === 'threshold') && resto.length <= 1) {
-      const pedido = resto[0]
-      if (pedido !== undefined) {
-        const v = pedido === 'padrao' || pedido === 'default' ? ((await ambiente($)).config.threshold ?? LIMIAR_ACIMA) : lerLimiar(pedido)
-        if (v === null) return { text: tx('invalid', kt(LIMIAR_MIN), kt(LIMIAR_MAX)) }
-        await update($, limiar, () => v)
-        if (sobre) sobre.limiar = v
-        else if (pedido === 'padrao' || pedido === 'default') await $.store.delete('limiar') // back to config -> default, not frozen at today's config value
-        else await $.store.set('limiar', v)
-        await indicar($)
-      }
-      return { text: tx('threshold', kt(await read($, limiar)), soSessao()) }
-    }
+    if (arg === 'button') return { text: await alternarBotao($, 'comando') }
+    if (arg === 'status') return { text: await textoStatus($) }
     if (arg !== '') return { text: tx('usage') }
     const f = await read($, fase)
     if (f === 'pronta') return { text: tx('alreadySaved', await arquivo($)) }
@@ -971,12 +1104,12 @@ export const register: Register = on => {
     return { text: tx('started') }
   })
 
-  // Only the person's message (origin composer) cancels; the band's own "handoff" does not pass through this hook.
+  // Only the person's message (origin composer) cancels; the band's own "relay" does not pass through this hook.
   // The band never adds context: the core SessionStart hook delivers the handoff to the new session.
   on('prompt.submit', async ($, e, next) => {
     const f = await read($, fase)
-    // "handoff" (or "passagem") typed: the message itself carries the instructions (core hook), so this only marks the start.
-    if (e.origin.kind === 'composer' && !e.command && ['handoff', 'passagem'].includes(e.text.trim().toLowerCase().replace(/^\//, ''))) {
+    // "relay" typed: the message itself carries the instructions (core hook), so this only marks the start.
+    if (e.origin.kind === 'composer' && !e.command && e.text.trim().toLowerCase().replace(/^\//, '') === 'relay') {
       if (f === 'ocioso' || f === 'contando' || f === 'aguardando') await comecarDigitada($)
       return next(e)
     }
@@ -1006,6 +1139,8 @@ export const register: Register = on => {
     const { context } = await $.session.usage()
     const n = context.tokens ?? null
     await update($, tokens, () => n)
+    const comp = await lerCompactacao($, context.window)
+    await update($, compact, () => comp)
     if (n !== null) {
       const id = await $.session.id().catch(() => '') // sem id nao ha piso guardado: so a reserva
       let real = n
@@ -1018,14 +1153,17 @@ export const register: Register = on => {
       if (id !== '') await guardarPiso($, id, (await read($, piso)) ?? n)
     }
     await indicar($)
-    rastro($, async () => `turno n=${n} piso=${await read($, piso)} interativo=${await read($, interativo)} auto=${await read($, auto)} limiar=${await read($, limiar)}`)
+    rastro($, async () => `turno n=${n} piso=${await read($, piso)} interativo=${await read($, interativo)} auto=${await read($, auto)} limiar=${await read($, limiar)} compact=${comp.c}/${comp.origem}`)
     await avancar($)
     const f = await read($, fase)
     if (f !== 'escrevendo') {
       // Contagem sem timer vivo (hot reload no meio): nao serve mais.
       if (f === 'contando' && contagem === null) await ocioso($, undefined, 'contagem sem timer')
       else if (f === 'ocioso' && (await read($, auto)) && (await read($, interativo))) {
-        if (deveAvisar(n, await read($, piso), await read($, adiado), 'ocioso', await read($, limiar))) await iniciarContagem($)
+        // Agente vivo: o auto nem comeca (o /clear nao para o agente, mas o aviso dele cairia na sessao nova sem contexto);
+        // a faixa segue avisando e o turno do aviso do fim dele confere de novo.
+        if (deveAvisar(n, await read($, piso), await read($, adiado), 'ocioso', await read($, limiar), comp.c) && (await vivos($, 'auto')) === 0)
+          await iniciarContagem($)
       }
       return r
     }
@@ -1077,7 +1215,7 @@ export const register: Register = on => {
       await update($, piso, () => null)
       await update($, adiado, () => null)
       recarregar($, antes)
-      if (veioDaPassagem) $.ui.toast(tx('opened'))
+      toastAbertaPendente = veioDaPassagem
       return r
     }
     rastro($, `session.end reason=${e.reason} evento=${e.sessionId}`)
@@ -1085,7 +1223,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const [n, pi, a, f, ligado, falta, lento, lim, visto, botaoVisivel, pronto] = await Promise.all([
+    const [n, pi, a, f, ligado, falta, lento, lim, visto, botaoVisivel, pronto, comp] = await Promise.all([
       read($, tokens),
       read($, piso),
       read($, adiado),
@@ -1097,6 +1235,7 @@ export const register: Register = on => {
       read($, apresentado),
       read($, botaoFixo),
       read($, carregado),
+      read($, compact),
     ])
     // Estado da sessao ainda nos padroes (logo depois do /clear): sem apresentacao nem botao a partir de valor errado.
     if (e.props.hasSurvey || !pronto) return next(e)
@@ -1143,12 +1282,12 @@ export const register: Register = on => {
         </Box>
       )
     }
-    if (n === null || pi === null || !deveAvisar(n, pi, a, f, lim)) {
+    if (n === null || pi === null || !deveAvisar(n, pi, a, f, lim, comp?.c ?? null)) {
       if (!visto) {
         const resto = await next(e)
         return (
           <Box flexDirection="column">
-            <Text color="cyan">{tx('intro', Math.round(lim / 1000))}</Text>
+            <Text color="cyan">{tx('intro', Math.round((pi === null ? lim : pontoDeTroca(pi, lim, comp?.c ?? null) - pi) / 1000))}</Text>
             <Text>{ligado ? tx('introAutoOn', CONTAGEM_S) : tx('introAutoOff', CONTAGEM_S)}</Text>
             <Text>{tx('introHow')}</Text>
             <Box>
